@@ -520,7 +520,8 @@ function requireAdmin(req, res, next) {
   const pass = process.env.ADMIN_PASSWORD;
   if (!pass) return res.status(503).send("Set ADMIN_PASSWORD to use the orders page.");
   const [scheme, encoded] = (req.headers.authorization || "").split(" ");
-  const given = scheme === "Basic" ? Buffer.from(encoded || "", "base64").toString().split(":").slice(1).join(":") : "";
+  // Trim so a pasted password with a stray space or line break still works.
+  const given = scheme === "Basic" ? Buffer.from(encoded || "", "base64").toString().split(":").slice(1).join(":").trim() : "";
   const ok = given.length === pass.length && crypto.timingSafeEqual(Buffer.from(given), Buffer.from(pass));
   if (ok) return next();
   res.set("WWW-Authenticate", 'Basic realm="EDZ orders"').status(401).send("Password required.");
