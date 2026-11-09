@@ -9,9 +9,9 @@ const cardThickness = [
 ];
 
 const cardFinish = [
-  { id: "silver", label: "Brushed stainless", swatch: "#c9ccd1", engrave: "#3b3f45", upcharge: 0 },
-  { id: "black", label: "Matte black", swatch: "#1d1f22", engrave: "#d9dcdf", upcharge: 0.5 },
-  { id: "gold", label: "Gold", swatch: "#d4af37", engrave: "#5a4410", upcharge: 0.75 },
+  { id: "silver", label: "Brushed stainless", swatch: "#c9ccd1", engrave: "#2b2f35", upcharge: 0 },
+  { id: "black", label: "Matte black", swatch: "#1d1f22", engrave: "#e4e7eb", upcharge: 0.5 },
+  { id: "gold", label: "Gold", swatch: "#d4af37", engrave: "#4a3608", upcharge: 0.75 },
 ];
 
 const cardQuantity = [

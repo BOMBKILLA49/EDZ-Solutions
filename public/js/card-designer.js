@@ -66,29 +66,89 @@
   }
 
   // ---------- preview ----------
-  // Shows artwork the way the laser will make it: no color, just the engraving on the
-  // chosen metal. Dark parts of the art become the engraved marks.
-  function engravedImage(src, alt, className) {
-    const img = new Image();
-    img.className = className;
-    img.alt = alt;
-    img.src = src;
-    if (state.finish === "black") {
-      img.style.filter = "grayscale(1) invert(1) contrast(1.1)";
-      img.style.mixBlendMode = "screen";
-    } else if (state.finish === "gold") {
-      img.style.filter = "grayscale(1) sepia(.6) contrast(1.1)";
-      img.style.mixBlendMode = "multiply";
-    } else {
-      img.style.filter = "grayscale(1) contrast(1.1)";
-      img.style.mixBlendMode = "multiply";
+  // Shows artwork the way the laser makes it: the background of the art is bare metal,
+  // and only the marks are drawn, in the color an engraving shows on that metal.
+  // Each image is analysed once; switching finishes just repaints.
+  const marksCache = new Map();
+
+  function engravingMarks(img) {
+    const w = Math.min(img.naturalWidth, 1200);
+    const h = Math.round((img.naturalHeight * w) / img.naturalWidth);
+    const c = document.createElement("canvas");
+    c.width = w;
+    c.height = h;
+    const ctx = c.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(img, 0, 0, w, h);
+    const px = ctx.getImageData(0, 0, w, h).data;
+    const lum = new Float32Array(w * h);
+    const hist = new Uint32Array(256);
+    for (let i = 0, j = 0; j < lum.length; i += 4, j++) {
+      // Transparent areas of an upload count as bare metal (white).
+      const a = px[i + 3] / 255;
+      const v = (0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2]) * a + 255 * (1 - a);
+      lum[j] = v;
+      hist[v | 0]++;
     }
-    return img;
+    const pct = (p) => {
+      let n = 0;
+      for (let v = 0; v < 256; v++) if ((n += hist[v]) >= p * lum.length) return v;
+      return 255;
+    };
+    // Most of a card is background. If the art is mostly dark (light text on a dark
+    // card), the light parts are what gets engraved, so flip it.
+    const flip = pct(0.5) < 110;
+    const bg = flip ? 255 - pct(0.25) : pct(0.75);
+    const ink = flip ? 255 - pct(0.98) : pct(0.02);
+    const range = Math.max(bg - ink, 24);
+    const marks = new Uint8ClampedArray(w * h);
+    for (let j = 0; j < lum.length; j++) {
+      const v = flip ? 255 - lum[j] : lum[j];
+      // Ignore faint texture the AI paints into its background (brushed-metal streaks).
+      const t = Math.min(Math.max(((bg - v) / range - 0.15) / 0.85, 0), 1);
+      marks[j] = Math.pow(t, 0.8) * 255;
+    }
+    return { w, h, marks };
+  }
+
+  function paintMarks(canvas, { w, h, marks }, color) {
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    const out = ctx.createImageData(w, h);
+    const r = parseInt(color.slice(1, 3), 16), g = parseInt(color.slice(3, 5), 16), b = parseInt(color.slice(5, 7), 16);
+    for (let i = 0, j = 0; j < marks.length; i += 4, j++) {
+      out.data[i] = r;
+      out.data[i + 1] = g;
+      out.data[i + 2] = b;
+      out.data[i + 3] = marks[j];
+    }
+    ctx.putImageData(out, 0, 0);
+  }
+
+  function engravedImage(src, alt, className) {
+    const canvas = document.createElement("canvas");
+    canvas.className = className;
+    canvas.setAttribute("role", "img");
+    canvas.setAttribute("aria-label", alt);
+    const finish = (state.catalog && state.catalog.finish.find((f) => f.id === state.finish)) || { engrave: "#2b2f35" };
+    const paint = (m) => paintMarks(canvas, m, finish.engrave);
+    if (marksCache.has(src)) {
+      paint(marksCache.get(src));
+    } else {
+      const img = new Image();
+      img.onload = () => {
+        const m = engravingMarks(img);
+        marksCache.set(src, m);
+        paint(m);
+      };
+      img.src = src;
+    }
+    return canvas;
   }
 
   function renderPreview() {
     card.dataset.finish = state.finish;
-    card.querySelectorAll("img").forEach((i) => i.remove());
+    card.querySelectorAll(".engrave, .upload-img").forEach((el) => el.remove());
     const placeholder = $("#placeholder");
 
     if (state.mode === "ai" && state.designId) {
