@@ -4,6 +4,7 @@ const express = require("express");
 const OpenAI = require("openai");
 const Stripe = require("stripe");
 const catalog = require("./config/catalog");
+const shipping = require("./config/shipping");
 const { pool, migrate } = require("./lib/db");
 const { sendAlert } = require("./lib/mailer");
 const cardback = require("./lib/cardback");
@@ -89,6 +90,8 @@ app.get("/api/catalog", (req, res) => {
     thickness: catalog.cardThickness,
     finish: catalog.cardFinish,
     quantity: catalog.cardQuantity,
+    destinations: shipping.DESTINATIONS,
+    freeUsShippingOverCents: shipping.US_FREE_OVER_CENTS,
     aiEnabled: Boolean(openai),
     checkoutEnabled: Boolean(stripe),
   });
@@ -125,12 +128,28 @@ function promoLabel(p) {
   return `Order total $${(p.value / 100).toFixed(2)}`;
 }
 
+// A "set the total" promo (like the $1 test code) covers shipping too.
+function quoteShip(dest, quote, price, promo) {
+  return shipping.quoteShipping({
+    dest: String(dest),
+    thickness: quote.thickness.id,
+    qty: quote.qty,
+    cardsTotalCents: price.totalCents,
+    waive: promo?.kind === "fixed_total",
+  });
+}
+
 app.post("/api/price", async (req, res) => {
   const q = catalog.quoteCard(req.body || {});
   if (!q) return res.status(400).json({ error: "Pick a thickness, finish and quantity." });
   const { promo, error } = await findPromo(req.body.promo);
   const price = applyPromo(q, promo);
-  res.json({ eachCents: q.eachCents, frontCents: q.frontCents, backCents: q.backCents, ...price, promo: promo ? { code: promo.code, label: promoLabel(promo) } : null, promoError: error || null });
+  const ship = quoteShip(req.body.dest || "US", q, price, promo);
+  res.json({
+    eachCents: q.eachCents, frontCents: q.frontCents, backCents: q.backCents, ...price,
+    shipping: ship, grandTotalCents: price.totalCents + (ship?.cents || 0),
+    promo: promo ? { code: promo.code, label: promoLabel(promo) } : null, promoError: error || null,
+  });
 });
 
 // ---------- AI business card designer (OpenAI image model) ----------
@@ -317,6 +336,9 @@ app.post("/api/checkout", async (req, res) => {
   const { promo, error: promoError } = await findPromo(req.body.promo);
   if (promoError) return res.status(400).json({ error: promoError });
   const price = applyPromo(quote, promo);
+  const dest = String(req.body.dest || "US");
+  const ship = quoteShip(dest, quote, price, promo);
+  if (!ship) return res.status(400).json({ error: "Sorry, we can't ship to that country." });
 
   const design = req.body.design || {};
   const order = {
@@ -379,7 +401,20 @@ app.post("/api/checkout", async (req, res) => {
           },
         },
       ],
-      shipping_address_collection: { allowed_countries: ["US"] },
+      // Only addresses in the destination the price was quoted for.
+      shipping_address_collection: { allowed_countries: [ship.country] },
+      shipping_options: [
+        {
+          shipping_rate_data: {
+            type: "fixed_amount",
+            fixed_amount: { amount: ship.cents, currency: "usd" },
+            display_name: dest === "US-HI" ? "Hawaii shipping" : ship.label,
+          },
+        },
+      ],
+      ...(ship.zone !== "us" && dest !== "US-HI" && dest !== "PR"
+        ? { custom_text: { shipping_address: { message: "International orders may owe import duties or taxes when they arrive. These are paid by the recipient." } } }
+        : {}),
       phone_number_collection: { enabled: true },
       client_reference_id: order.id,
       metadata: { order_id: order.id, promo: promo?.code || "", thickness: quote.thickness.id, finish: quote.finish.id, qty: String(quote.qty), tiktok: order.tiktok },
@@ -390,12 +425,13 @@ app.post("/api/checkout", async (req, res) => {
     await pool.query(
       `INSERT INTO orders (id, stripe_session, details, thickness, finish, qty, total_cents, watch_live, tiktok, notes,
                            design_type, upload_name, upload_mime, upload_data, promo_code, discount_cents,
-                           back_mode, back_name, back_mime, back_data, qr_url)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
+                           back_mode, back_name, back_mime, back_data, qr_url, shipping_cents, ship_dest)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)`,
       [order.id, session.id, order.details, quote.thickness.id, quote.finish.id, quote.qty, price.totalCents,
        order.watchLive, order.tiktok, order.notes, design.type, order.upload.name, order.upload.mime, order.upload.data,
        promo?.code || null, price.discountCents,
-       backMode, order.back?.name || null, order.back?.mime || null, order.back?.data || null, order.qrUrl || null]
+       backMode, order.back?.name || null, order.back?.mime || null, order.back?.data || null, order.qrUrl || null,
+       ship.cents, dest]
     );
     res.json({ url: session.url });
   } catch (err) {
@@ -411,10 +447,18 @@ async function markPaid(sessionId) {
   if (session.payment_status !== "paid") return null;
   const cust = session.customer_details || {};
   const ship = session.collected_information?.shipping_details || session.shipping_details || null;
+  // Hawaii is part of the US at Stripe, so a mainland rate with a Hawaii address can
+  // slip through. Flag it so the difference can be collected before shipping.
+  const { rows: pending } = await pool.query("SELECT ship_dest FROM orders WHERE stripe_session=$1", [sessionId]);
+  const state = ship?.address?.state;
+  const dest = pending[0]?.ship_dest;
+  let flag = null;
+  if (dest === "US" && state === "HI") flag = "Hawaii address, but paid mainland US shipping. Collect the difference before shipping.";
+  if (dest === "US-HI" && state && state !== "HI") flag = `Paid Hawaii shipping, but the address is in ${state}.`;
   const { rows } = await pool.query(
-    `UPDATE orders SET status='paid', paid_at=now(), customer_email=$2, customer_name=$3, customer_phone=$4, shipping=$5
+    `UPDATE orders SET status='paid', paid_at=now(), customer_email=$2, customer_name=$3, customer_phone=$4, shipping=$5, ship_flag=$6
      WHERE stripe_session=$1 AND status='pending_payment' RETURNING *`,
-    [sessionId, cust.email || null, ship?.name || cust.name || null, cust.phone || null, ship]
+    [sessionId, cust.email || null, ship?.name || cust.name || null, cust.phone || null, ship, flag]
   );
   if (rows[0]?.promo_code) await pool.query("UPDATE promos SET uses = uses + 1 WHERE code=$1", [rows[0].promo_code]);
   if (rows[0]) await sendOrderAlert(rows[0]).catch((e) => console.error("alert email failed:", e));
@@ -442,7 +486,8 @@ async function sendOrderAlert(o) {
   const addr = o.shipping?.address;
   const shipTo = addr ? [o.shipping.name, addr.line1, addr.line2, `${addr.city}, ${addr.state} ${addr.postal_code}`].filter(Boolean).join("\n") : "(none)";
   const lines = [
-    `NEW PAID ORDER — $${(o.total_cents / 100).toFixed(2)}`,
+    `NEW PAID ORDER — $${((o.total_cents + o.shipping_cents) / 100).toFixed(2)} (cards $${(o.total_cents / 100).toFixed(2)} + shipping $${(o.shipping_cents / 100).toFixed(2)})`,
+    o.ship_flag ? `⚠️ SHIPPING MISMATCH: ${o.ship_flag}` : null,
     ``,
     `${o.qty} cards · ${o.thickness} mm · ${FINISH_LABEL[o.finish] || o.finish}`,
     o.promo_code ? `Promo: ${o.promo_code} (saved $${(o.discount_cents / 100).toFixed(2)})` : null,
@@ -532,7 +577,7 @@ app.get("/admin", requireAdmin, (req, res) => res.sendFile(path.join(__dirname, 
 app.get("/api/admin/orders", requireAdmin, async (req, res) => {
   const { rows } = await pool.query(
     `SELECT id, created_at, paid_at, status, details, thickness, finish, qty, total_cents, watch_live, tiktok, notes,
-            design_type, promo_code, discount_cents, back_mode, qr_url, (back_data IS NOT NULL) AS has_back, back_name, back_mime, upload_name, upload_mime, customer_email, customer_name, customer_phone, shipping
+            design_type, promo_code, discount_cents, back_mode, qr_url, shipping_cents, ship_dest, ship_flag, (back_data IS NOT NULL) AS has_back, back_name, back_mime, upload_name, upload_mime, customer_email, customer_name, customer_phone, shipping
      FROM orders WHERE status <> 'pending_payment' ORDER BY paid_at DESC LIMIT 200`
   );
   const { rows: inquiries } = await pool.query("SELECT created_at, data FROM inquiries ORDER BY created_at DESC LIMIT 50");

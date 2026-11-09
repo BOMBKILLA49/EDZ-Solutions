@@ -9,6 +9,7 @@
     finish: "mirror",
     qty: 50,
     promo: "",
+    dest: "US",
     view: "front", // which side the preview shows
     back: { mode: "none", designId: null, upload: null },
   };
@@ -51,6 +52,20 @@
       (q) => ({ value: q.qty, html: `${q.qty} cards<small>${q.discount ? `Save ${Math.round(q.discount * 100)}%` : "&nbsp;"}</small>` }),
       (v) => { state.qty = Number(v); updatePrice(); });
 
+    // Ship-to list: US first, then Hawaii and Puerto Rico, then every other country by name.
+    const names = new Intl.DisplayNames(["en"], { type: "region" });
+    const label = (d) => (d === "US-HI" ? "Hawaii (United States)" : names.of(d));
+    const [us, hi, pr, ...rest] = c.destinations;
+    rest.sort((a, b) => label(a).localeCompare(label(b)));
+    $("#ship-to").innerHTML =
+      [us, hi, pr].map((d) => `<option value="${d}">${label(d)}</option>`).join("") +
+      `<option disabled>──────────</option>` +
+      rest.map((d) => `<option value="${d}">${label(d)}</option>`).join("");
+    $("#ship-to").addEventListener("change", (e) => {
+      state.dest = e.target.value;
+      updatePrice();
+    });
+
     if (!c.aiEnabled) {
       $("#generate").disabled = true;
       showMsg($("#ai-msg"), "The AI designer is coming online soon. You can upload your own design in the meantime.", false);
@@ -61,15 +76,27 @@
 
   async function updatePrice() {
     try {
-      const p = await postJSON("/api/price", { thickness: state.thickness, finish: state.finish, qty: state.qty, promo: state.promo, back: hasBack() });
+      const p = await postJSON("/api/price", { thickness: state.thickness, finish: state.finish, qty: state.qty, promo: state.promo, back: hasBack(), dest: state.dest });
       $("#back-price").textContent = `+${money(Math.round(p.frontCents * 0.25))} per card, 75% off`;
       const discounted = p.discountCents > 0;
-      $("#total").innerHTML = money(p.totalCents) + (discounted ? `<span class="was">${money(p.subtotalCents)}</span>` : "");
-      $("#each").textContent = p.promo
+      const ship = p.shipping;
+      $("#total").innerHTML = money(p.grandTotalCents) + (discounted ? `<span class="was">${money(p.subtotalCents + (ship?.cents || 0))}</span>` : "");
+      const note = $("#ship-note");
+      if (!ship) {
+        note.textContent = "Sorry, we can't ship there.";
+      } else if (ship.zone === "us") {
+        const short = ship.freeOverCents - p.totalCents;
+        note.textContent = ship.cents === 0 ? "Free US shipping." : `US shipping ${money(ship.cents)}. Add ${money(short)} more for free shipping.`;
+      } else {
+        const intl = state.dest !== "US-HI" && state.dest !== "PR";
+        note.textContent = `${ship.label}: ${money(ship.cents)}${ship.weightLb ? ` (package about ${ship.weightLb} lb)` : ""}.${intl ? " Import duties or taxes may be due on delivery." : ""}`;
+      }
+      const shipText = ship ? (ship.cents ? ` + ${money(ship.cents)} shipping` : " · free shipping") : "";
+      $("#each").textContent = (p.promo
         ? `${state.qty} cards · promo ${p.promo.code}: ${p.promo.label}`
         : hasBack()
           ? `${state.qty} cards · ${money(p.frontCents)} front + ${money(p.backCents)} back each`
-          : `${state.qty} cards · ${money(p.eachCents)} each`;
+          : `${state.qty} cards · ${money(p.eachCents)} each`) + shipText;
       const msg = $("#promo-msg");
       if (p.promoError) {
         state.promo = "";
@@ -425,6 +452,7 @@
         finish: state.finish,
         qty: state.qty,
         promo: state.promo,
+        dest: state.dest,
         back,
         watchLive: $("#watch-live").checked,
         tiktok: $("#tiktok").value,

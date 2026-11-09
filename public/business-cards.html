@@ -142,6 +142,11 @@
         <label>Your TikTok handle <span class="hint">(optional)</span><input id="tiktok" placeholder="@yourhandle"></label>
         <label>Notes for us <span class="hint">(optional)</span><textarea id="notes" style="min-height:80px" placeholder="Anything we should know?"></textarea></label>
 
+        <label>Ship to
+          <select id="ship-to"><option value="US">United States</option></select>
+        </label>
+        <p class="hint" id="ship-note" style="margin:-6px 0 14px"></p>
+
         <div class="promo-row">
           <label for="promo" class="sr-only">Promo code</label>
           <input id="promo" placeholder="Promo code" autocomplete="off" autocapitalize="characters">
@@ -157,7 +162,7 @@
           <button type="button" class="btn btn-primary" id="checkout">Order &amp; pay securely</button>
         </div>
         <div class="msg" id="checkout-msg" role="status"></div>
-        <p class="hint" style="margin-top:12px">Shipping address is collected at checkout. Cards ship within 5–7 business days of your order.</p>
+        <p class="hint" style="margin-top:12px">Free US shipping on orders of $100 or more (excludes Hawaii and Puerto Rico). Shipping address is collected at checkout. Cards ship within 5–7 business days of your order.</p>
       </div>
 
       <!-- right: preview -->

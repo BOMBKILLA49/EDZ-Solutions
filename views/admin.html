@@ -140,12 +140,14 @@
               ${o.watch_live ? `<span class="pill live">Live${o.tiktok ? " · " + esc(o.tiktok) : ""}</span>` : ""}
               <span class="meta">Paid ${when(o.paid_at)}</span>
             </div>
-            <h3>${esc(o.customer_name || d.name || "Customer")} — ${money(o.total_cents)}</h3>
+            ${o.ship_flag ? `<div class="msg show err" style="margin:0 0 10px"><strong>Shipping mismatch:</strong> ${esc(o.ship_flag)}</div>` : ""}
+            <h3>${esc(o.customer_name || d.name || "Customer")} — ${money(o.total_cents + (o.shipping_cents || 0))}</h3>
             <div class="meta">${o.qty} cards · ${esc(o.thickness)} mm · ${esc(data.finishes[o.finish] || o.finish)}${o.promo_code ? ` · promo ${esc(o.promo_code)} (−${money(o.discount_cents)})` : ""}</div>
             <dl class="kv">
               <dt>Card text</dt><dd>${esc([d.name, d.title, d.company, d.phone, d.email, d.website, d.tagline].filter(Boolean).join(" · ") || "—")}</dd>
               <dt>Contact</dt><dd>${esc([o.customer_email, o.customer_phone].filter(Boolean).join(" · "))}</dd>
-              <dt>Ship to</dt><dd>${esc(ship)}</dd>
+              <dt>Ship to</dt><dd>${esc(ship)}${a && a.country && a.country !== "US" ? `\n${esc(a.country)}` : ""}</dd>
+              <dt>Shipping</dt><dd>${o.shipping_cents ? money(o.shipping_cents) : "Free"}${o.ship_dest && o.ship_dest !== "US" ? ` · ${esc(o.ship_dest === "US-HI" ? "Hawaii rate" : o.ship_dest)}` : ""}</dd>
               <dt>Back</dt><dd>${o.has_back ? ({ ai: "AI design + QR code", qr: "QR code layout", upload: "Customer upload" })[o.back_mode] : "Blank"}</dd>
               ${o.qr_url ? `<dt>QR link</dt><dd><a href="${esc(o.qr_url)}" target="_blank" rel="noopener">${esc(o.qr_url)}</a></dd>` : ""}
               ${o.notes ? `<dt>Notes</dt><dd>${esc(o.notes)}</dd>` : ""}
