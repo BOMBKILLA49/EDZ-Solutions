@@ -30,18 +30,18 @@ const PORTFOLIO = [
     tags: ["Restaurant", "Menu"],
   },
   {
-    name: "Alamogordo Towing",
-    url: "https://alamogordotowing.com",
-    color: "linear-gradient(135deg, #ea580c, #1f2937)",
-    blurb: "Lead-generation site with Google Ads landing pages and call tracking for a towing service area.",
-    tags: ["Google Ads", "Landing pages"],
+    name: "Zia Towing",
+    url: "https://www.ziatow.com",
+    color: "linear-gradient(135deg, #facc15, #b91c1c)",
+    blurb: "24/7 towing and roadside dispatch for rural New Mexico, built to rank for \"tow truck near me\" across Socorro, Catron and Otero counties.",
+    tags: ["Local SEO", "Lead generation"],
   },
   {
-    name: "Primm Towing",
-    url: "https://primmtowing.com",
-    color: "linear-gradient(135deg, #fb923c, #7c2d12)",
-    blurb: "Highway towing site covering Primm, Jean and Baker with ad-matched landing pages.",
-    tags: ["Google Ads", "Call tracking"],
+    name: "Large Transit",
+    url: "https://largetransit.com",
+    color: "linear-gradient(135deg, #0ea5e9, #0f172a)",
+    blurb: "Freight and oversize transportation company site covering FTL/LTL, heavy equipment and industrial hauling, with a free-quote request form.",
+    tags: ["Logistics", "Quote form"],
   },
 ];
 
