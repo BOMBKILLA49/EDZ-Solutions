@@ -124,22 +124,21 @@ The customer's style request: ${style || "clean, modern and professional"}
 Do not draw a QR code or barcode. Do not use any brand logo or trademark other than this customer's own business name. Keep all text at least 6% in from every edge so nothing is cut off.`;
 }
 
-// Stamp the PNG with its real print resolution so laser software imports it at 3.5 x 2 in.
-function withDpi(png, dpi) {
-  const ppm = Math.round(dpi / 0.0254);
-  const data = Buffer.alloc(9);
-  data.writeUInt32BE(ppm, 0);
-  data.writeUInt32BE(ppm, 4);
-  data.writeUInt8(1, 8); // unit: meter
-  const type = Buffer.from("pHYs");
-  const chunk = Buffer.alloc(21);
-  chunk.writeUInt32BE(9, 0);
-  type.copy(chunk, 4);
-  data.copy(chunk, 8);
-  chunk.writeUInt32BE(zlib.crc32(Buffer.concat([type, data])), 17);
-  const ihdrEnd = 8 + 25; // signature + IHDR chunk
-  return Buffer.concat([png.subarray(0, ihdrEnd), chunk, png.subarray(ihdrEnd)]);
+// Stamp the JPEG with its real print resolution so laser software imports it at 3.5 x 2 in.
+function withDpi(jpeg, dpi) {
+  const isJfif = jpeg[2] === 0xff && jpeg[3] === 0xe0 && jpeg.subarray(6, 11).toString("latin1") === "JFIF\0";
+  if (isJfif) {
+    const out = Buffer.from(jpeg);
+    out.writeUInt8(1, 13); // density unit: dots per inch
+    out.writeUInt16BE(dpi, 14);
+    out.writeUInt16BE(dpi, 16);
+    return out;
+  }
+  const app0 = Buffer.from([0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x01, dpi >> 8, dpi & 0xff, dpi >> 8, dpi & 0xff, 0x00, 0x00]);
+  return Buffer.concat([jpeg.subarray(0, 2), app0, jpeg.subarray(2)]);
 }
+
+const imageMime = (buf) => (buf[0] === 0x89 && buf[1] === 0x50 ? "image/png" : "image/jpeg");
 
 // Designs take 10-60 seconds and Heroku stops any single request at 30s, so POST
 // /api/design starts the work and returns a job id, and the page polls
@@ -159,9 +158,9 @@ async function runDesign({ prompt, previous }) {
   let result;
   const started = Date.now();
   try {
-    const params = { model: IMAGE_MODEL, prompt, size: CARD_SIZE, quality: "medium", output_format: "png" };
+    const params = { model: IMAGE_MODEL, prompt, size: CARD_SIZE, quality: "medium", output_format: "jpeg", output_compression: 90 };
     result = previous
-      ? await openai.images.edit({ ...params, image: await OpenAI.toFile(previous, "design.png", { type: "image/png" }) })
+      ? await openai.images.edit({ ...params, image: await OpenAI.toFile(previous, "design.jpg", { type: imageMime(previous) }) })
       : await openai.images.generate(params);
   } catch (err) {
     console.error("design error:", err.status, err.code, err.message);
@@ -234,7 +233,7 @@ app.get("/api/design/:id", (req, res) => {
 app.get("/api/design-image/:id", async (req, res) => {
   const { rows } = await pool.query("SELECT image FROM designs WHERE id=$1", [req.params.id]).catch(() => ({ rows: [] }));
   if (!rows[0]) return res.status(404).end();
-  res.set({ "Content-Type": "image/png", "Cache-Control": "private, max-age=86400" }).send(rows[0].image);
+  res.set({ "Content-Type": imageMime(rows[0].image), "Cache-Control": "private, max-age=86400" }).send(rows[0].image);
 });
 
 // ---------- business card checkout ----------
@@ -256,7 +255,8 @@ app.post("/api/checkout", async (req, res) => {
   if (design.type === "ai") {
     const { rows } = await pool.query("SELECT image FROM designs WHERE id=$1", [design.designId]).catch(() => ({ rows: [] }));
     if (!rows[0]) return res.status(400).json({ error: "Create a design first." });
-    order.upload = { mime: "image/png", name: "ai-design.png", data: rows[0].image };
+    const mime = imageMime(rows[0].image);
+    order.upload = { mime, name: mime === "image/png" ? "ai-design.png" : "ai-design.jpg", data: rows[0].image };
   } else if (design.type === "upload") {
     const m = /^data:(image\/(png|jpeg|svg\+xml)|application\/pdf);base64,(.*)$/s.exec(design.dataUrl || "");
     if (!m) return res.status(400).json({ error: "Upload a PNG, JPG, SVG or PDF." });
@@ -336,7 +336,7 @@ async function sendOrderAlert(o) {
     `NEW PAID ORDER — $${(o.total_cents / 100).toFixed(2)}`,
     ``,
     `${o.qty} cards · ${o.thickness} mm · ${FINISH_LABEL[o.finish] || o.finish}`,
-    `Design: ${o.design_type === "ai" ? "AI design (PNG attached, 3.5 x 2 in at 512 DPI)" : `customer upload (${o.upload_name})`}`,
+    `Design: ${o.design_type === "ai" ? "AI design (image attached, 3.5 x 2 in at 512 DPI)" : `customer upload (${o.upload_name})`}`,
     `Watch live: ${o.watch_live ? `YES${o.tiktok ? ` — ${o.tiktok}` : ""}` : "no"}`,
     o.notes ? `Notes: ${o.notes}` : null,
     ``,
