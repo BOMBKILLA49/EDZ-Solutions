@@ -64,7 +64,6 @@
     const esc = (v) => String(v ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
     const money = (c) => `$${(c / 100).toFixed(2)}`;
     const when = (t) => (t ? new Date(t).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "");
-    const ENGRAVE = { silver: "#3b3f45", black: "#d9dcdf", gold: "#5a4410" };
 
     function matches(o, f) {
       if (f === "all") return true;
@@ -80,9 +79,8 @@
     }
 
     function preview(o) {
-      if (o.design_type === "ai" && o.svg) {
-        const tinted = o.svg.replace(/#000000|#000\b/gi, ENGRAVE[o.finish] || "#333");
-        return `<div class="metal-card" data-finish="${esc(o.finish)}"><img class="engrave" alt="Design" src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(tinted)}"></div>`;
+      if (o.design_type === "ai") {
+        return `<img alt="Design" src="/api/admin/orders/${o.id}/design?inline=1" style="width:100%;border-radius:12px;box-shadow:0 8px 20px rgba(15,23,42,.18)">`;
       }
       return `<div class="file-box">Customer upload<br><strong>${esc(o.upload_name)}</strong></div>`;
     }

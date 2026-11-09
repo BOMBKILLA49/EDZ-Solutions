@@ -1,7 +1,8 @@
 const path = require("path");
 const crypto = require("crypto");
 const express = require("express");
-const Anthropic = require("@anthropic-ai/sdk");
+const zlib = require("zlib");
+const OpenAI = require("openai");
 const Stripe = require("stripe");
 const catalog = require("./config/catalog");
 const { pool, migrate } = require("./lib/db");
@@ -10,7 +11,7 @@ const { sendAlert } = require("./lib/mailer");
 const PORT = process.env.PORT || 3000;
 const SITE_URL = (process.env.SITE_URL || `http://localhost:${PORT}`).replace(/\/$/, "");
 
-const anthropic = process.env.ANTHROPIC_API_KEY ? new Anthropic() : null;
+const openai = process.env.OPENAI_API_KEY ? new OpenAI() : null;
 const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
 
 const app = express();
@@ -70,23 +71,6 @@ function cardDetails(body) {
   };
 }
 
-// The SVG is shown in <img> tags (scripts never run there), but strip anything
-// active anyway before storing or sending it anywhere.
-function sanitizeSvg(svg) {
-  let s = String(svg || "");
-  const start = s.indexOf("<svg");
-  const end = s.lastIndexOf("</svg>");
-  if (start === -1 || end === -1) return null;
-  s = s.slice(start, end + 6);
-  s = s.replace(/<script[\s\S]*?<\/script>/gi, "");
-  s = s.replace(/<foreignObject[\s\S]*?<\/foreignObject>/gi, "");
-  s = s.replace(/<(image|use|a)\b[^>]*\/?>/gi, "").replace(/<\/(a)>/gi, "");
-  s = s.replace(/\son\w+\s*=\s*("[^"]*"|'[^']*')/gi, "");
-  s = s.replace(/(href|xlink:href)\s*=\s*("[^"]*"|'[^']*')/gi, "");
-  if (!/^<svg[^>]*xmlns=/.test(s)) s = s.replace("<svg", '<svg xmlns="http://www.w3.org/2000/svg"');
-  return s;
-}
-
 // Simple per-IP limit so the AI designer can't be used to run up the API bill.
 const hits = new Map();
 function rateLimited(ip, limit = 25, windowMs = 60 * 60 * 1000) {
@@ -104,7 +88,7 @@ app.get("/api/catalog", (req, res) => {
     thickness: catalog.cardThickness,
     finish: catalog.cardFinish,
     quantity: catalog.cardQuantity,
-    aiEnabled: Boolean(anthropic),
+    aiEnabled: Boolean(openai),
     checkoutEnabled: Boolean(stripe),
   });
 });
@@ -115,36 +99,52 @@ app.post("/api/price", (req, res) => {
   res.json({ eachCents: q.eachCents, totalCents: q.totalCents });
 });
 
-// ---------- AI business card designer ----------
+// ---------- AI business card designer (OpenAI image model) ----------
 
-const DESIGN_SYSTEM = `You design business cards that are laser engraved onto metal by a fiber laser.
+const IMAGE_MODEL = "gpt-image-2.6-flare";
+const CARD_SIZE = "1792x1024"; // 1.75:1, the exact shape of a 3.5 x 2 in card
+const CARD_DPI = 512; // 1792 px / 3.5 in
 
-Output one SVG for the FRONT of a 3.5 x 2 inch card.
-- Root element: <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1050 600">. No width/height attributes.
-- Everything you draw is engraved. Use ONLY fill="#000" and/or stroke="#000". No other colors, no gradients, no opacity, no filters, no patterns, no <image>, no external references, no <style> blocks, no scripts.
-- Do not draw a background rectangle; the bare metal is the background.
-- Fonts: font-family must be one of sans-serif, serif, monospace (optionally with font-weight). No web fonts.
-- Keep all content at least 45 units inside every edge. Smallest text is font-size 22. Lines and strokes are at least 2 units wide.
-- Use every contact detail provided exactly as written, spelled exactly. Leave out fields that are empty. Never invent phone numbers, emails or names.
-- If the customer asks for a picture (a house, truck, job site, tool, animal...), draw it as a clean, bold line-art illustration that engraves well: simple outlines and solid shapes, no tiny detail, kept to one area of the card so the text stays readable. Keep the SVG compact.
-- Simple geometric shapes, rules, borders and line icons (phone, mail, globe) drawn with paths are welcome. A simple monogram or mark built from the company initials is fine. Never reproduce another company's logo or trademark.
-- Make it look professionally designed: clear hierarchy, aligned edges, generous spacing, nothing overlapping.
+function designPrompt(details, style) {
+  const labels = { company: "Company", name: "Name", title: "Title", tagline: "Tagline", phone: "Phone", email: "Email", website: "Website" };
+  const text = Object.entries(labels)
+    .filter(([k]) => details[k])
+    .map(([k, label]) => `${label}: ${details[k]}`)
+    .join("\n");
+  return `Design the FRONT of a horizontal 3.5 x 2 inch business card that will be laser engraved on a metal card.
 
-Also return a short one-sentence note describing the design.`;
+Fill the entire image edge to edge with the flat card design, viewed straight on. No mockup, no hands, no table, no shadows, no perspective, no card shape sitting on a background.
+Monochrome only: black, white and shades of gray, in a detailed engraved-metal style. No color.
 
-const DESIGN_SCHEMA = {
-  type: "object",
-  properties: {
-    svg: { type: "string" },
-    note: { type: "string" },
-  },
-  required: ["svg", "note"],
-  additionalProperties: false,
-};
+Put exactly this text on the card, spelled exactly as written, and nothing else for contact details:
+${text}
 
-// A detailed design can take Claude 30-60 seconds, longer than Heroku lets one request
-// run (30s). So POST /api/design starts the work and returns a job id right away, and
-// the page polls GET /api/design/:id until it's done. Jobs live in memory on the one dyno.
+The customer's style request: ${style || "clean, modern and professional"}
+
+Do not draw a QR code or barcode. Do not use any brand logo or trademark other than this customer's own business name. Keep all text at least 6% in from every edge so nothing is cut off.`;
+}
+
+// Stamp the PNG with its real print resolution so laser software imports it at 3.5 x 2 in.
+function withDpi(png, dpi) {
+  const ppm = Math.round(dpi / 0.0254);
+  const data = Buffer.alloc(9);
+  data.writeUInt32BE(ppm, 0);
+  data.writeUInt32BE(ppm, 4);
+  data.writeUInt8(1, 8); // unit: meter
+  const type = Buffer.from("pHYs");
+  const chunk = Buffer.alloc(21);
+  chunk.writeUInt32BE(9, 0);
+  type.copy(chunk, 4);
+  data.copy(chunk, 8);
+  chunk.writeUInt32BE(zlib.crc32(Buffer.concat([type, data])), 17);
+  const ihdrEnd = 8 + 25; // signature + IHDR chunk
+  return Buffer.concat([png.subarray(0, ihdrEnd), chunk, png.subarray(ihdrEnd)]);
+}
+
+// Designs take 10-60 seconds and Heroku stops any single request at 30s, so POST
+// /api/design starts the work and returns a job id, and the page polls
+// GET /api/design/:id until it's done. Jobs live in memory on the one dyno; finished
+// designs are saved in the database so checkout can attach them to the order.
 const designJobs = new Map();
 const JOB_TTL_MS = 15 * 60 * 1000;
 
@@ -155,48 +155,37 @@ class DesignError extends Error {
   }
 }
 
-async function runDesign(prompt) {
-  let response;
+async function runDesign({ prompt, previous }) {
+  let result;
+  const started = Date.now();
   try {
-    response = await anthropic.beta.messages.create({
-      model: "claude-opus-5",
-      max_tokens: 16000,
-      betas: ["server-side-fallback-2026-07-01"],
-      fallbacks: "default",
-      system: DESIGN_SYSTEM,
-      output_config: {
-        effort: "medium",
-        format: { type: "json_schema", schema: DESIGN_SCHEMA },
-      },
-      messages: [{ role: "user", content: prompt }],
-    });
+    const params = { model: IMAGE_MODEL, prompt, size: CARD_SIZE, quality: "medium", output_format: "png" };
+    result = previous
+      ? await openai.images.edit({ ...params, image: await OpenAI.toFile(previous, "design.png", { type: "image/png" }) })
+      : await openai.images.generate(params);
   } catch (err) {
-    console.error("design error:", err);
-    if (err instanceof Anthropic.RateLimitError) throw new DesignError(503, "The designer is busy. Try again in a minute.");
+    console.error("design error:", err.status, err.code, err.message);
+    if (err.code === "moderation_blocked" || err.code === "content_policy_violation") {
+      throw new DesignError(422, "That design request can't be made. Try describing it differently.");
+    }
+    if (err.status === 429) throw new DesignError(503, "The designer is busy. Try again in a minute.");
     throw new DesignError(500, "The designer hit a snag. Please try again.");
   }
+  console.log(`design: ${previous ? "edit" : "new"} in ${((Date.now() - started) / 1000).toFixed(0)}s, usage ${JSON.stringify(result.usage)}`);
 
-  const u = response.usage;
-  const cost = (u.input_tokens * 5 + u.output_tokens * 25) / 1e6;
-  console.log(`design: ${u.input_tokens} in / ${u.output_tokens} out tokens, ~$${cost.toFixed(3)}`);
-
-  if (response.stop_reason === "refusal") {
-    throw new DesignError(422, "That design request can't be made. Try describing it differently.");
-  }
-  try {
-    const text = response.content.filter((b) => b.type === "text").map((b) => b.text).join("");
-    const parsed = JSON.parse(text);
-    const svg = sanitizeSvg(parsed.svg);
-    if (!svg) throw new Error("No SVG in response");
-    return { svg, note: clean(parsed.note, 300) };
-  } catch (err) {
-    console.error("design parse error:", err, "stop_reason:", response.stop_reason);
-    throw new DesignError(500, "The designer hit a snag. Please try again.");
-  }
+  const b64 = result.data?.[0]?.b64_json;
+  if (!b64) throw new DesignError(500, "The designer hit a snag. Please try again.");
+  const image = withDpi(Buffer.from(b64, "base64"), CARD_DPI);
+  const { rows } = await pool.query("INSERT INTO designs (id, prompt, image) VALUES ($1,$2,$3) RETURNING id", [
+    crypto.randomUUID(),
+    prompt,
+    image,
+  ]);
+  return { designId: rows[0].id };
 }
 
-app.post("/api/design", (req, res) => {
-  if (!anthropic) return res.status(503).json({ error: "The AI designer isn't switched on yet." });
+app.post("/api/design", async (req, res) => {
+  if (!openai) return res.status(503).json({ error: "The AI designer isn't switched on yet." });
   if (rateLimited(req.ip)) return res.status(429).json({ error: "Design limit reached for now. Try again in an hour." });
 
   const details = cardDetails(req.body);
@@ -204,26 +193,30 @@ app.post("/api/design", (req, res) => {
     return res.status(400).json({ error: "Add at least a name or company." });
   }
   const style = clean(req.body.style, 600);
-  const previousSvg = req.body.previousSvg ? sanitizeSvg(clean(req.body.previousSvg, 60000)) : null;
   const revision = clean(req.body.revision, 600);
 
-  const lines = Object.entries(details)
-    .filter(([, v]) => v)
-    .map(([k, v]) => `${k}: ${v}`)
-    .join("\n");
+  let previous = null;
+  let prompt = designPrompt(details, style);
+  if (req.body.previousDesignId && revision) {
+    const { rows } = await pool.query("SELECT image FROM designs WHERE id=$1", [req.body.previousDesignId]).catch(() => ({ rows: [] }));
+    if (!rows[0]) return res.status(404).json({ error: "That design expired. Please create it again." });
+    previous = rows[0].image;
+    prompt = `Edit this business card design. Change only what is asked and keep everything else the same: ${revision}
 
-  let prompt = `Card details:\n${lines}\n\nStyle the customer asked for: ${style || "clean, modern, professional"}`;
-  if (previousSvg && revision) {
-    prompt += `\n\nHere is the current design:\n${previousSvg}\n\nRevise it: ${revision}`;
+Keep it monochrome (black, white and grays), flat and edge to edge. Keep every word, number and email spelled exactly as it is now unless the change asks otherwise:
+${Object.values(details).filter(Boolean).join(" | ")}`;
   }
 
   for (const [id, job] of designJobs) if (Date.now() - job.createdAt > JOB_TTL_MS) designJobs.delete(id);
   const id = crypto.randomUUID();
   const job = { createdAt: Date.now(), status: "working" };
   designJobs.set(id, job);
-  runDesign(prompt).then(
+  runDesign({ prompt, previous }).then(
     (result) => Object.assign(job, { status: "done", result }),
-    (err) => Object.assign(job, { status: "error", httpStatus: err.status || 500, error: err.message })
+    (err) => {
+      if (!(err instanceof DesignError)) console.error("design save error:", err);
+      Object.assign(job, { status: "error", httpStatus: err.status || 500, error: err instanceof DesignError ? err.message : "The designer hit a snag. Please try again." });
+    }
   );
   res.status(202).json({ jobId: id });
 });
@@ -235,6 +228,13 @@ app.get("/api/design/:id", (req, res) => {
   designJobs.delete(req.params.id);
   if (job.status === "error") return res.status(job.httpStatus).json({ error: job.error });
   res.json({ status: "done", ...job.result });
+});
+
+// Design ids are random UUIDs, so only the person who made a design can find it.
+app.get("/api/design-image/:id", async (req, res) => {
+  const { rows } = await pool.query("SELECT image FROM designs WHERE id=$1", [req.params.id]).catch(() => ({ rows: [] }));
+  if (!rows[0]) return res.status(404).end();
+  res.set({ "Content-Type": "image/png", "Cache-Control": "private, max-age=86400" }).send(rows[0].image);
 });
 
 // ---------- business card checkout ----------
@@ -254,8 +254,9 @@ app.post("/api/checkout", async (req, res) => {
   };
 
   if (design.type === "ai") {
-    order.svg = sanitizeSvg(design.svg);
-    if (!order.svg) return res.status(400).json({ error: "Create a design first." });
+    const { rows } = await pool.query("SELECT image FROM designs WHERE id=$1", [design.designId]).catch(() => ({ rows: [] }));
+    if (!rows[0]) return res.status(400).json({ error: "Create a design first." });
+    order.upload = { mime: "image/png", name: "ai-design.png", data: rows[0].image };
   } else if (design.type === "upload") {
     const m = /^data:(image\/(png|jpeg|svg\+xml)|application\/pdf);base64,(.*)$/s.exec(design.dataUrl || "");
     if (!m) return res.status(400).json({ error: "Upload a PNG, JPG, SVG or PDF." });
@@ -290,11 +291,10 @@ app.post("/api/checkout", async (req, res) => {
 
     await pool.query(
       `INSERT INTO orders (id, stripe_session, details, thickness, finish, qty, total_cents, watch_live, tiktok, notes,
-                           design_type, svg, upload_name, upload_mime, upload_data)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+                           design_type, upload_name, upload_mime, upload_data)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
       [order.id, session.id, order.details, quote.thickness.id, quote.finish.id, quote.qty, quote.totalCents,
-       order.watchLive, order.tiktok, order.notes, design.type, order.svg || null,
-       order.upload?.name || null, order.upload?.mime || null, order.upload?.data || null]
+       order.watchLive, order.tiktok, order.notes, design.type, order.upload.name, order.upload.mime, order.upload.data]
     );
     res.json({ url: session.url });
   } catch (err) {
@@ -323,17 +323,9 @@ const FINISH_LABEL = Object.fromEntries(catalog.cardFinish.map((f) => [f.id, f.l
 const escapeHtml = (v) => String(v ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
 function designFile(order) {
-  if (order.design_type === "ai") {
-    return { filename: `EDZ-${order.id.slice(0, 8)}.svg`, contentType: "image/svg+xml", content: laserSvg(order.svg) };
-  }
   const ext = { "image/png": "png", "image/jpeg": "jpg", "image/svg+xml": "svg", "application/pdf": "pdf" }[order.upload_mime] || "bin";
-  return { filename: `EDZ-${order.id.slice(0, 8)}-upload.${ext}`, contentType: order.upload_mime, content: order.upload_data };
-}
-
-// Real-world size so the file imports into laser software at exactly 3.5 x 2 in.
-function laserSvg(svg) {
-  return svg.replace(/<svg\b([^>]*)>/, (m, attrs) =>
-    `<svg${attrs.replace(/\s(width|height)="[^"]*"/g, "")} width="88.9mm" height="50.8mm">`);
+  const kind = order.design_type === "ai" ? "ai-design" : "upload";
+  return { filename: `EDZ-${order.id.slice(0, 8)}-${kind}.${ext}`, contentType: order.upload_mime, content: order.upload_data };
 }
 
 async function sendOrderAlert(o) {
@@ -344,7 +336,7 @@ async function sendOrderAlert(o) {
     `NEW PAID ORDER — $${(o.total_cents / 100).toFixed(2)}`,
     ``,
     `${o.qty} cards · ${o.thickness} mm · ${FINISH_LABEL[o.finish] || o.finish}`,
-    `Design: ${o.design_type === "ai" ? "AI design (SVG attached, sized 3.5 x 2 in)" : `customer upload (${o.upload_name})`}`,
+    `Design: ${o.design_type === "ai" ? "AI design (PNG attached, 3.5 x 2 in at 512 DPI)" : `customer upload (${o.upload_name})`}`,
     `Watch live: ${o.watch_live ? `YES${o.tiktok ? ` — ${o.tiktok}` : ""}` : "no"}`,
     o.notes ? `Notes: ${o.notes}` : null,
     ``,
@@ -427,7 +419,7 @@ app.get("/admin", requireAdmin, (req, res) => res.sendFile(path.join(__dirname, 
 app.get("/api/admin/orders", requireAdmin, async (req, res) => {
   const { rows } = await pool.query(
     `SELECT id, created_at, paid_at, status, details, thickness, finish, qty, total_cents, watch_live, tiktok, notes,
-            design_type, svg, upload_name, upload_mime, customer_email, customer_name, customer_phone, shipping
+            design_type, upload_name, upload_mime, customer_email, customer_name, customer_phone, shipping
      FROM orders WHERE status <> 'pending_payment' ORDER BY paid_at DESC LIMIT 200`
   );
   const { rows: inquiries } = await pool.query("SELECT created_at, data FROM inquiries ORDER BY created_at DESC LIMIT 50");
@@ -438,6 +430,7 @@ app.get("/api/admin/orders/:id/design", requireAdmin, async (req, res) => {
   const { rows } = await pool.query("SELECT * FROM orders WHERE id=$1", [req.params.id]).catch(() => ({ rows: [] }));
   if (!rows[0]) return res.status(404).send("Not found");
   const f = designFile(rows[0]);
+  if (req.query.inline) return res.set("Content-Type", f.contentType).send(f.content);
   res.set("Content-Type", f.contentType).attachment(f.filename).send(f.content);
 });
 

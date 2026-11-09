@@ -3,7 +3,7 @@
   const state = {
     mode: "ai",
     catalog: null,
-    svg: null, // AI design (engraving drawn in #000)
+    designId: null, // AI design saved on the server
     upload: null, // { name, dataUrl, mime }
     thickness: "0.5",
     finish: "silver",
@@ -66,8 +66,24 @@
   }
 
   // ---------- preview ----------
-  function finishInfo() {
-    return (state.catalog && state.catalog.finish.find((f) => f.id === state.finish)) || { engrave: "#3b3f45" };
+  // Shows artwork the way the laser will make it: no color, just the engraving on the
+  // chosen metal. Dark parts of the art become the engraved marks.
+  function engravedImage(src, alt, className) {
+    const img = new Image();
+    img.className = className;
+    img.alt = alt;
+    img.src = src;
+    if (state.finish === "black") {
+      img.style.filter = "grayscale(1) invert(1) contrast(1.1)";
+      img.style.mixBlendMode = "screen";
+    } else if (state.finish === "gold") {
+      img.style.filter = "grayscale(1) sepia(.6) contrast(1.1)";
+      img.style.mixBlendMode = "multiply";
+    } else {
+      img.style.filter = "grayscale(1) contrast(1.1)";
+      img.style.mixBlendMode = "multiply";
+    }
+    return img;
   }
 
   function renderPreview() {
@@ -75,22 +91,11 @@
     card.querySelectorAll("img").forEach((i) => i.remove());
     const placeholder = $("#placeholder");
 
-    if (state.mode === "ai" && state.svg) {
-      const tinted = state.svg.replace(/#000000|#000\b|"black"/gi, (m) => (m === '"black"' ? `"${finishInfo().engrave}"` : finishInfo().engrave));
-      const img = new Image();
-      img.className = "engrave";
-      img.alt = "Business card design preview";
-      img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(tinted);
-      card.append(img);
+    if (state.mode === "ai" && state.designId) {
+      card.append(engravedImage(`/api/design-image/${state.designId}`, "Business card design preview", "engrave"));
       placeholder.hidden = true;
     } else if (state.mode === "upload" && state.upload && state.upload.mime !== "application/pdf") {
-      const img = new Image();
-      img.className = "upload-img";
-      img.alt = "Your uploaded artwork";
-      img.src = state.upload.dataUrl;
-      img.style.mixBlendMode = state.finish === "black" ? "screen" : "multiply";
-      if (state.finish === "black") img.style.filter = "invert(1) grayscale(1)";
-      card.append(img);
+      card.append(engravedImage(state.upload.dataUrl, "Your uploaded artwork", "upload-img"));
       placeholder.hidden = true;
     } else {
       placeholder.hidden = false;
@@ -129,12 +134,12 @@
     const buttons = [$("#generate"), $("#apply-revision"), $("#new-design")];
     buttons.forEach((b) => (b.disabled = true));
     const label = btn.textContent;
-    btn.textContent = "Designing… (30–60 seconds)";
+    btn.textContent = "Designing… (about 15–45 seconds)";
     card.classList.add("loading");
     try {
       const out = await waitForDesign(body);
-      state.svg = out.svg;
-      $("#preview-note").textContent = out.note || "";
+      state.designId = out.designId;
+      $("#preview-note").innerHTML = "<strong>Check every letter and number.</strong> AI can misspell. If anything is wrong, ask for a fix below or try a new design.";
       $("#revise").classList.add("show");
       renderPreview();
     } catch (err) {
@@ -153,7 +158,7 @@
   $("#apply-revision").addEventListener("click", (e) => {
     const revision = $("#revision").value.trim();
     if (!revision) return $("#revision").focus();
-    design({ details: details(), style: $("#style").value, previousSvg: state.svg, revision }, e.currentTarget).then(() => {
+    design({ details: details(), style: $("#style").value, previousDesignId: state.designId, revision }, e.currentTarget).then(() => {
       $("#revision").value = "";
     });
   });
@@ -188,8 +193,8 @@
     let design;
     let d = details();
     if (state.mode === "ai") {
-      if (!state.svg) return showMsg(msg, "Create your design first (step 2), or switch to Upload.", false);
-      design = { type: "ai", svg: state.svg };
+      if (!state.designId) return showMsg(msg, "Create your design first (step 2), or switch to Upload.", false);
+      design = { type: "ai", designId: state.designId };
     } else {
       if (!state.upload) return showMsg(msg, "Upload your artwork first.", false);
       design = { type: "upload", name: state.upload.name, dataUrl: state.upload.dataUrl };

@@ -1,12 +1,12 @@
 # EDZ Solutions
 
-Business site: web design portfolio + inquiries, laser engraving catalog, AI metal business card designer (Claude) with Stripe checkout, TikTok Live schedule, and a password-protected orders page.
+Business site: web design portfolio + inquiries, laser engraving catalog, AI metal business card designer (OpenAI image model) with Stripe checkout, TikTok Live schedule, and a password-protected orders page.
 
 ## Run locally
     brew services start postgresql@16 && createdb edz   # first time only
     ./run-local.sh                                      # http://localhost:3077
 
-`run-local.sh` reads keys from `~/.config/edz/` (anthropic_key, stripe_key, admin_password, optional smtp.env). See `.env.example` for every setting.
+`run-local.sh` reads keys from `~/.config/edz/` (openai_key, stripe_key, admin_password, optional smtp.env). See `.env.example` for every setting.
 
 ## How orders flow
 1. Customer designs a card and starts checkout → order saved as `pending_payment` with the design.

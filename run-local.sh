@@ -1,7 +1,7 @@
 #!/bin/bash
 # Starts the site on this Mac using the keys saved in ~/.config/edz
 cd "$(dirname "$0")"
-export ANTHROPIC_API_KEY="$(cat ~/.config/edz/anthropic_key)"
+export OPENAI_API_KEY="$(cat ~/.config/edz/openai_key)"
 export STRIPE_SECRET_KEY="$(cat ~/.config/edz/stripe_key)"
 export ADMIN_PASSWORD="$(cat ~/.config/edz/admin_password)"
 [ -f ~/.config/edz/smtp.env ] && set -a && source ~/.config/edz/smtp.env && set +a
