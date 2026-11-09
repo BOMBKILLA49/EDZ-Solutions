@@ -93,10 +93,43 @@ app.get("/api/catalog", (req, res) => {
   });
 });
 
-app.post("/api/price", (req, res) => {
+// ---------- promo codes ----------
+
+const STRIPE_MIN_CENTS = 50; // Stripe won't charge less than $0.50
+
+async function findPromo(raw) {
+  const code = clean(raw, 40).toUpperCase();
+  if (!code) return { promo: null };
+  const { rows } = await pool.query("SELECT * FROM promos WHERE code=$1", [code]);
+  const p = rows[0];
+  if (!p || !p.active) return { error: "That promo code isn't valid." };
+  if (p.max_uses != null && p.uses >= p.max_uses) return { error: "That promo code has been used up." };
+  return { promo: p };
+}
+
+function applyPromo(quote, promo) {
+  const subtotal = quote.totalCents;
+  let total = subtotal;
+  if (promo?.kind === "percent") total = Math.round(subtotal * (1 - Math.min(promo.value, 100) / 100));
+  if (promo?.kind === "amount") total = subtotal - promo.value;
+  if (promo?.kind === "fixed_total") total = Math.min(promo.value, subtotal);
+  total = Math.max(total, Math.min(STRIPE_MIN_CENTS, subtotal));
+  return { subtotalCents: subtotal, discountCents: subtotal - total, totalCents: total };
+}
+
+function promoLabel(p) {
+  if (!p) return null;
+  if (p.kind === "percent") return `${p.value}% off`;
+  if (p.kind === "amount") return `$${(p.value / 100).toFixed(2)} off`;
+  return `Order total $${(p.value / 100).toFixed(2)}`;
+}
+
+app.post("/api/price", async (req, res) => {
   const q = catalog.quoteCard(req.body || {});
   if (!q) return res.status(400).json({ error: "Pick a thickness, finish and quantity." });
-  res.json({ eachCents: q.eachCents, totalCents: q.totalCents });
+  const { promo, error } = await findPromo(req.body.promo);
+  const price = applyPromo(q, promo);
+  res.json({ eachCents: q.eachCents, ...price, promo: promo ? { code: promo.code, label: promoLabel(promo) } : null, promoError: error || null });
 });
 
 // ---------- AI business card designer (OpenAI image model) ----------
@@ -243,6 +276,10 @@ app.post("/api/checkout", async (req, res) => {
   const quote = catalog.quoteCard(req.body || {});
   if (!quote) return res.status(400).json({ error: "Pick a thickness, finish and quantity." });
 
+  const { promo, error: promoError } = await findPromo(req.body.promo);
+  if (promoError) return res.status(400).json({ error: promoError });
+  const price = applyPromo(quote, promo);
+
   const design = req.body.design || {};
   const order = {
     id: crypto.randomUUID(),
@@ -268,15 +305,19 @@ app.post("/api/checkout", async (req, res) => {
   try {
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
+      // One line for the whole set, so a discounted total never has to split into whole cents per card.
       line_items: [
         {
-          quantity: quote.qty,
+          quantity: 1,
           price_data: {
             currency: "usd",
-            unit_amount: quote.eachCents,
+            unit_amount: price.totalCents,
             product_data: {
-              name: `Metal business cards — ${quote.thickness.label}, ${quote.finish.label}`,
-              description: order.watchLive ? "Engraved live on TikTok" : "Custom laser engraved",
+              name: `${quote.qty} metal business cards — ${quote.thickness.label}, ${quote.finish.label}`,
+              description: [
+                order.watchLive ? "Engraved live on TikTok" : "Custom laser engraved",
+                promo ? `Promo ${promo.code}: ${promoLabel(promo)}` : null,
+              ].filter(Boolean).join(" · "),
             },
           },
         },
@@ -284,17 +325,18 @@ app.post("/api/checkout", async (req, res) => {
       shipping_address_collection: { allowed_countries: ["US"] },
       phone_number_collection: { enabled: true },
       client_reference_id: order.id,
-      metadata: { order_id: order.id, thickness: quote.thickness.id, finish: quote.finish.id, qty: String(quote.qty), tiktok: order.tiktok },
+      metadata: { order_id: order.id, promo: promo?.code || "", thickness: quote.thickness.id, finish: quote.finish.id, qty: String(quote.qty), tiktok: order.tiktok },
       success_url: `${SITE_URL}/order-complete?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${SITE_URL}/business-cards`,
     });
 
     await pool.query(
       `INSERT INTO orders (id, stripe_session, details, thickness, finish, qty, total_cents, watch_live, tiktok, notes,
-                           design_type, upload_name, upload_mime, upload_data)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
-      [order.id, session.id, order.details, quote.thickness.id, quote.finish.id, quote.qty, quote.totalCents,
-       order.watchLive, order.tiktok, order.notes, design.type, order.upload.name, order.upload.mime, order.upload.data]
+                           design_type, upload_name, upload_mime, upload_data, promo_code, discount_cents)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+      [order.id, session.id, order.details, quote.thickness.id, quote.finish.id, quote.qty, price.totalCents,
+       order.watchLive, order.tiktok, order.notes, design.type, order.upload.name, order.upload.mime, order.upload.data,
+       promo?.code || null, price.discountCents]
     );
     res.json({ url: session.url });
   } catch (err) {
@@ -315,6 +357,7 @@ async function markPaid(sessionId) {
      WHERE stripe_session=$1 AND status='pending_payment' RETURNING *`,
     [sessionId, cust.email || null, ship?.name || cust.name || null, cust.phone || null, ship]
   );
+  if (rows[0]?.promo_code) await pool.query("UPDATE promos SET uses = uses + 1 WHERE code=$1", [rows[0].promo_code]);
   if (rows[0]) await sendOrderAlert(rows[0]).catch((e) => console.error("alert email failed:", e));
   return rows[0] || null;
 }
@@ -336,6 +379,7 @@ async function sendOrderAlert(o) {
     `NEW PAID ORDER — $${(o.total_cents / 100).toFixed(2)}`,
     ``,
     `${o.qty} cards · ${o.thickness} mm · ${FINISH_LABEL[o.finish] || o.finish}`,
+    o.promo_code ? `Promo: ${o.promo_code} (saved $${(o.discount_cents / 100).toFixed(2)})` : null,
     `Design: ${o.design_type === "ai" ? "AI design (image attached, 3.5 x 2 in at 512 DPI)" : `customer upload (${o.upload_name})`}`,
     `Watch live: ${o.watch_live ? `YES${o.tiktok ? ` — ${o.tiktok}` : ""}` : "no"}`,
     o.notes ? `Notes: ${o.notes}` : null,
@@ -419,7 +463,7 @@ app.get("/admin", requireAdmin, (req, res) => res.sendFile(path.join(__dirname, 
 app.get("/api/admin/orders", requireAdmin, async (req, res) => {
   const { rows } = await pool.query(
     `SELECT id, created_at, paid_at, status, details, thickness, finish, qty, total_cents, watch_live, tiktok, notes,
-            design_type, upload_name, upload_mime, customer_email, customer_name, customer_phone, shipping
+            design_type, promo_code, discount_cents, upload_name, upload_mime, customer_email, customer_name, customer_phone, shipping
      FROM orders WHERE status <> 'pending_payment' ORDER BY paid_at DESC LIMIT 200`
   );
   const { rows: inquiries } = await pool.query("SELECT created_at, data FROM inquiries ORDER BY created_at DESC LIMIT 50");
@@ -438,6 +482,37 @@ app.post("/api/admin/orders/:id/status", requireAdmin, async (req, res) => {
   const status = String(req.body.status || "");
   if (!["paid", "engraved", "shipped"].includes(status)) return res.status(400).json({ error: "Bad status" });
   await pool.query("UPDATE orders SET status=$2 WHERE id=$1 AND status <> 'pending_payment'", [req.params.id, status]);
+  res.json({ ok: true });
+});
+
+app.get("/api/admin/promos", requireAdmin, async (req, res) => {
+  const { rows } = await pool.query("SELECT * FROM promos ORDER BY created_at DESC");
+  res.json({ promos: rows.map((p) => ({ ...p, label: promoLabel(p) })) });
+});
+
+app.post("/api/admin/promos", requireAdmin, async (req, res) => {
+  const b = req.body || {};
+  const code = clean(b.code, 40).toUpperCase().replace(/[^A-Z0-9_-]/g, "");
+  const kind = String(b.kind || "");
+  // Dollar amounts arrive as dollars from the form; store cents.
+  const value = kind === "percent" ? Math.round(Number(b.value)) : Math.round(Number(b.value) * 100);
+  const maxUses = b.maxUses === "" || b.maxUses == null ? null : Math.round(Number(b.maxUses));
+  if (code.length < 3) return res.status(400).json({ error: "Codes need at least 3 letters or numbers." });
+  if (!["percent", "amount", "fixed_total"].includes(kind)) return res.status(400).json({ error: "Pick a discount type." });
+  if (!Number.isFinite(value) || value < 0 || (kind === "percent" && value > 100)) return res.status(400).json({ error: "Check the discount amount." });
+  if (kind === "fixed_total" && value < STRIPE_MIN_CENTS) return res.status(400).json({ error: "The lowest total Stripe can charge is $0.50." });
+  if (maxUses != null && !(maxUses > 0)) return res.status(400).json({ error: "Max uses must be blank or a positive number." });
+  try {
+    await pool.query("INSERT INTO promos (code, kind, value, max_uses, note) VALUES ($1,$2,$3,$4,$5)", [code, kind, value, maxUses, clean(b.note, 120) || null]);
+    res.json({ ok: true });
+  } catch (err) {
+    if (err.code === "23505") return res.status(400).json({ error: "That code already exists." });
+    throw err;
+  }
+});
+
+app.post("/api/admin/promos/:code/active", requireAdmin, async (req, res) => {
+  await pool.query("UPDATE promos SET active=$2 WHERE code=$1", [req.params.code, Boolean(req.body.active)]);
   res.json({ ok: true });
 });
 

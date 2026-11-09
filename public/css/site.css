@@ -195,6 +195,10 @@ textarea { min-height: 110px; resize: vertical; }
 .opt input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
 .swatch { display: inline-block; width: 14px; height: 14px; border-radius: 50%; vertical-align: -2px; margin-right: 6px; border: 1px solid rgba(0,0,0,.2); }
 
+.promo-row { display: flex; gap: 10px; margin: 6px 0 12px; }
+.promo-row input { margin-top: 0; text-transform: uppercase; }
+.promo-row .btn { padding: 11px 18px; }
+.total-bar .was { color: #94a3b8; text-decoration: line-through; font-size: 1rem; font-weight: 600; margin-left: 8px; }
 .total-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; background: var(--ink); color: #fff; border-radius: var(--radius); padding: 18px 22px; margin-top: 8px; flex-wrap: wrap; }
 .total-bar .amount { font-size: 1.6rem; font-weight: 800; }
 .total-bar .each { color: #94a3b8; font-size: .9rem; }

@@ -105,6 +105,13 @@
         <label>Your TikTok handle <span class="hint">(optional)</span><input id="tiktok" placeholder="@yourhandle"></label>
         <label>Notes for us <span class="hint">(optional)</span><textarea id="notes" style="min-height:80px" placeholder="Anything we should know?"></textarea></label>
 
+        <div class="promo-row">
+          <label for="promo" class="sr-only">Promo code</label>
+          <input id="promo" placeholder="Promo code" autocomplete="off" autocapitalize="characters">
+          <button type="button" class="btn btn-outline" id="apply-promo">Apply</button>
+        </div>
+        <div class="msg" id="promo-msg" role="status"></div>
+
         <div class="total-bar">
           <div>
             <div class="amount" id="total">$—</div>

@@ -8,6 +8,7 @@
     thickness: "0.5",
     finish: "mirror",
     qty: 50,
+    promo: "",
   };
   const money = (cents) => `$${(cents / 100).toFixed(2)}`;
   const card = $("#card");
@@ -57,13 +58,36 @@
 
   async function updatePrice() {
     try {
-      const p = await postJSON("/api/price", { thickness: state.thickness, finish: state.finish, qty: state.qty });
-      $("#total").textContent = money(p.totalCents);
-      $("#each").textContent = `${state.qty} cards · ${money(p.eachCents)} each`;
+      const p = await postJSON("/api/price", { thickness: state.thickness, finish: state.finish, qty: state.qty, promo: state.promo });
+      const discounted = p.discountCents > 0;
+      $("#total").innerHTML = money(p.totalCents) + (discounted ? `<span class="was">${money(p.subtotalCents)}</span>` : "");
+      $("#each").textContent = p.promo
+        ? `${state.qty} cards · promo ${p.promo.code}: ${p.promo.label}`
+        : `${state.qty} cards · ${money(p.eachCents)} each`;
+      const msg = $("#promo-msg");
+      if (p.promoError) {
+        state.promo = "";
+        showMsg(msg, p.promoError, false);
+      } else if (p.promo) {
+        showMsg(msg, `Promo ${p.promo.code} applied: ${p.promo.label}.`, true);
+      } else {
+        msg.className = "msg";
+      }
     } catch {
       $("#total").textContent = "$—";
     }
   }
+
+  $("#apply-promo").addEventListener("click", () => {
+    state.promo = $("#promo").value.trim();
+    updatePrice();
+  });
+  $("#promo").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      $("#apply-promo").click();
+    }
+  });
 
   // ---------- preview ----------
   // Shows artwork the way the laser makes it: the background of the art is bare metal,
@@ -293,6 +317,7 @@
         thickness: state.thickness,
         finish: state.finish,
         qty: state.qty,
+        promo: state.promo,
         watchLive: $("#watch-live").checked,
         tiktok: $("#tiktok").value,
         notes: $("#notes").value,

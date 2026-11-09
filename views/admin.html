@@ -34,6 +34,14 @@
     .actions .btn { padding: 9px 14px; font-size: .9rem; }
     .empty { text-align: center; color: var(--muted); padding: 60px 0; }
     .inq { font-size: .93rem; }
+    .promo-form { display: grid; grid-template-columns: 1.2fr 1fr .8fr .8fr 1.4fr auto; gap: 10px; align-items: end; }
+    @media (max-width: 860px) { .promo-form { grid-template-columns: 1fr 1fr; } }
+    .promo-form label { margin: 0; }
+    .promos { width: 100%; border-collapse: collapse; margin-top: 18px; font-size: .93rem; }
+    .promos th, .promos td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); }
+    .promos th { font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+    .promos code { font-weight: 700; color: var(--ink); }
+    .promos tr.off td { opacity: .5; }
   </style>
 </head>
 <body>
@@ -47,6 +55,26 @@
 
   <main class="wrap" style="padding-top:28px;padding-bottom:60px">
     <div id="list"></div>
+    <h2 style="margin-top:40px">Promo codes</h2>
+    <div class="card">
+      <form class="promo-form" id="promo-form">
+        <label>Code<input name="code" required placeholder="SPRING20" autocomplete="off"></label>
+        <label>Type
+          <select name="kind">
+            <option value="percent">% off</option>
+            <option value="amount">$ off</option>
+            <option value="fixed_total">Set total to $</option>
+          </select>
+        </label>
+        <label>Amount<input name="value" required inputmode="decimal" placeholder="20"></label>
+        <label>Max uses<input name="maxUses" inputmode="numeric" placeholder="Unlimited"></label>
+        <label>Note<input name="note" placeholder="TikTok live special"></label>
+        <button class="btn btn-primary" type="submit">Add code</button>
+      </form>
+      <div class="msg" id="promo-msg" role="status"></div>
+      <div style="overflow-x:auto"><table class="promos"><thead><tr><th>Code</th><th>Discount</th><th>Used</th><th>Note</th><th></th></tr></thead><tbody id="promo-list"></tbody></table></div>
+    </div>
+
     <h2 style="margin-top:40px">Website inquiries</h2>
     <div id="inquiries"></div>
   </main>
@@ -107,7 +135,7 @@
               <span class="meta">Paid ${when(o.paid_at)}</span>
             </div>
             <h3>${esc(o.customer_name || d.name || "Customer")} — ${money(o.total_cents)}</h3>
-            <div class="meta">${o.qty} cards · ${esc(o.thickness)} mm · ${esc(data.finishes[o.finish] || o.finish)}</div>
+            <div class="meta">${o.qty} cards · ${esc(o.thickness)} mm · ${esc(data.finishes[o.finish] || o.finish)}${o.promo_code ? ` · promo ${esc(o.promo_code)} (−${money(o.discount_cents)})` : ""}</div>
             <dl class="kv">
               <dt>Card text</dt><dd>${esc([d.name, d.title, d.company, d.phone, d.email, d.website, d.tagline].filter(Boolean).join(" · ") || "—")}</dd>
               <dt>Contact</dt><dd>${esc([o.customer_email, o.customer_phone].filter(Boolean).join(" · "))}</dd>
@@ -134,12 +162,53 @@
         : `<div class="empty" style="padding:20px 0">No inquiries yet.</div>`;
     }
 
+    async function loadPromos() {
+      const { promos } = await (await fetch("/api/admin/promos")).json();
+      document.getElementById("promo-list").innerHTML = promos.length
+        ? promos.map((p) => `<tr class="${p.active ? "" : "off"}">
+            <td><code>${esc(p.code)}</code></td>
+            <td>${esc(p.label)}</td>
+            <td>${p.uses}${p.max_uses != null ? ` / ${p.max_uses}` : ""}</td>
+            <td>${esc(p.note || "")}</td>
+            <td style="text-align:right"><button class="btn btn-outline" style="padding:6px 12px;font-size:.85rem" data-code="${esc(p.code)}" data-active="${p.active ? "" : "1"}">${p.active ? "Turn off" : "Turn on"}</button></td>
+          </tr>`).join("")
+        : `<tr><td colspan="5" class="meta">No promo codes yet.</td></tr>`;
+    }
+
+    document.getElementById("promo-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const form = e.target;
+      const msg = document.getElementById("promo-msg");
+      const res = await fetch("/api/admin/promos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(Object.fromEntries(new FormData(form))),
+      });
+      const out = await res.json().catch(() => ({}));
+      msg.textContent = res.ok ? "Code added." : out.error || "Couldn't add that code.";
+      msg.className = `msg show ${res.ok ? "ok" : "err"}`;
+      if (res.ok) form.reset();
+      loadPromos();
+    });
+
+    document.getElementById("promo-list").addEventListener("click", async (e) => {
+      const b = e.target.closest("button[data-code]");
+      if (!b) return;
+      await fetch(`/api/admin/promos/${encodeURIComponent(b.dataset.code)}/active`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ active: Boolean(b.dataset.active) }),
+      });
+      loadPromos();
+    });
+
     async function load() {
       const res = await fetch("/api/admin/orders");
       data = await res.json();
       renderFilters();
       renderOrders();
       renderInquiries();
+      loadPromos();
     }
 
     document.getElementById("filters").addEventListener("click", (e) => {
