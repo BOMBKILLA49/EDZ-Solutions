@@ -9,7 +9,10 @@
     finish: "mirror",
     qty: 50,
     promo: "",
+    view: "front", // which side the preview shows
+    back: { mode: "none", designId: null, upload: null },
   };
+  const hasBack = () => state.back.mode !== "none";
   const money = (cents) => `$${(cents / 100).toFixed(2)}`;
   const card = $("#card");
 
@@ -58,12 +61,15 @@
 
   async function updatePrice() {
     try {
-      const p = await postJSON("/api/price", { thickness: state.thickness, finish: state.finish, qty: state.qty, promo: state.promo });
+      const p = await postJSON("/api/price", { thickness: state.thickness, finish: state.finish, qty: state.qty, promo: state.promo, back: hasBack() });
+      $("#back-price").textContent = `+${money(Math.round(p.frontCents * 0.25))} per card, 75% off`;
       const discounted = p.discountCents > 0;
       $("#total").innerHTML = money(p.totalCents) + (discounted ? `<span class="was">${money(p.subtotalCents)}</span>` : "");
       $("#each").textContent = p.promo
         ? `${state.qty} cards · promo ${p.promo.code}: ${p.promo.label}`
-        : `${state.qty} cards · ${money(p.eachCents)} each`;
+        : hasBack()
+          ? `${state.qty} cards · ${money(p.frontCents)} front + ${money(p.backCents)} back each`
+          : `${state.qty} cards · ${money(p.eachCents)} each`;
       const msg = $("#promo-msg");
       if (p.promoError) {
         state.promo = "";
@@ -193,23 +199,65 @@
     return canvas;
   }
 
+  const qrUrl = () => $("#qr-url").value.trim();
+  const looksLikeUrl = (u) => /^(https?:\/\/)?[^\s.\/]+\.[^\s]{2,}/i.test(u);
+
+  // What the back looks like right now: an image to show, or a message.
+  function backView() {
+    const b = state.back;
+    const params = new URLSearchParams({ url: qrUrl(), finish: state.finish, company: details().company || details().name || "", caption: $("#qr-caption").value.trim() });
+    if (b.mode === "none") return { text: "Blank back: nothing engraved on this side." };
+    if (b.mode === "upload") {
+      if (!b.upload) return { text: "Choose your back artwork" };
+      if (b.upload.mime === "application/pdf") return { text: `PDF uploaded: ${b.upload.name}` };
+      return { src: b.upload.dataUrl, cls: "upload-img" };
+    }
+    if (b.mode === "ai" && !b.designId) return { text: "Create your back design" };
+    if (!looksLikeUrl(qrUrl())) {
+      if (b.mode === "ai") return { src: `/api/design-image/${b.designId}`, cls: "engrave", note: "Add the QR code link to see your QR code here." };
+      return { text: "Add the QR code link to see your back" };
+    }
+    if (b.mode === "ai") params.set("design", b.designId);
+    return { src: `/api/back-image?${params}`, cls: "engrave", note: "Scan the QR code on your screen with your phone to test it." };
+  }
+
+  function frontView() {
+    if (state.mode === "ai" && state.designId) return { src: `/api/design-image/${state.designId}`, cls: "engrave" };
+    if (state.mode === "upload" && state.upload) {
+      if (state.upload.mime === "application/pdf") return { text: `PDF uploaded: ${state.upload.name}` };
+      return { src: state.upload.dataUrl, cls: "upload-img" };
+    }
+    return { text: "Your design appears here" };
+  }
+
   function renderPreview() {
     card.dataset.finish = state.finish;
     card.querySelectorAll(".engrave, .upload-img").forEach((el) => el.remove());
+    document.querySelectorAll("[data-side]").forEach((t) => t.classList.toggle("active", t.dataset.side === state.view));
+    const v = state.view === "back" ? backView() : frontView();
     const placeholder = $("#placeholder");
-
-    if (state.mode === "ai" && state.designId) {
-      card.append(engravedImage(`/api/design-image/${state.designId}`, "Business card design preview", "engrave"));
-      placeholder.hidden = true;
-    } else if (state.mode === "upload" && state.upload && state.upload.mime !== "application/pdf") {
-      card.append(engravedImage(state.upload.dataUrl, "Your uploaded artwork", "upload-img"));
+    if (v.src) {
+      card.append(engravedImage(v.src, `Card ${state.view} preview`, v.cls));
       placeholder.hidden = true;
     } else {
       placeholder.hidden = false;
-      placeholder.textContent =
-        state.mode === "upload" && state.upload ? `PDF uploaded: ${state.upload.name}` : "Your design appears here";
+      placeholder.textContent = v.text;
+    }
+    if (state.view === "back") {
+      $("#preview-note").textContent = v.note || "The preview shows your design engraved on the metal you pick.";
+    } else if (state.mode === "ai" && state.designId) {
+      $("#preview-note").innerHTML = "<strong>Check every letter and number.</strong> AI can misspell. If anything is wrong, ask for a fix below or try a new design.";
+    } else {
+      $("#preview-note").textContent = "The preview shows your design engraved on the metal you pick. Engraving has no color.";
     }
   }
+
+  document.querySelectorAll("[data-side]").forEach((t) =>
+    t.addEventListener("click", () => {
+      state.view = t.dataset.side;
+      renderPreview();
+    })
+  );
 
   // ---------- AI design ----------
   const details = () => Object.fromEntries(new FormData($("#details")));
@@ -235,19 +283,25 @@
     throw new Error("The designer is taking too long. Please try again.");
   }
 
-  async function design(body, btn) {
-    const msg = $("#ai-msg");
+  async function design(body, btn, side = "front") {
+    const msg = side === "back" ? $("#back-msg") : $("#ai-msg");
     msg.className = "msg";
-    const buttons = [$("#generate"), $("#apply-revision"), $("#new-design")];
+    const buttons = [$("#generate"), $("#apply-revision"), $("#new-design"), $("#generate-back"), $("#apply-back-revision")];
     buttons.forEach((b) => (b.disabled = true));
     const label = btn.textContent;
     btn.textContent = "Designing… (about 15–45 seconds)";
+    state.view = side;
+    renderPreview();
     card.classList.add("loading");
     try {
-      const out = await waitForDesign(body);
-      state.designId = out.designId;
-      $("#preview-note").innerHTML = "<strong>Check every letter and number.</strong> AI can misspell. If anything is wrong, ask for a fix below or try a new design.";
-      $("#revise").classList.add("show");
+      const out = await waitForDesign({ ...body, side });
+      if (side === "back") {
+        state.back.designId = out.designId;
+        $("#back-revise").classList.add("show");
+      } else {
+        state.designId = out.designId;
+        $("#revise").classList.add("show");
+      }
       renderPreview();
     } catch (err) {
       showMsg(msg, err.message, false);
@@ -270,28 +324,71 @@
     });
   });
 
-  // ---------- upload ----------
-  const dz = $("#dropzone");
-  function takeFile(file) {
+  // ---------- back of the card ----------
+  function showBackFields() {
+    const m = state.back.mode;
+    $("#back-qr-fields").hidden = !(m === "ai" || m === "qr");
+    $("#back-ai-fields").hidden = m !== "ai";
+    $("#back-upload-fields").hidden = m !== "upload";
+  }
+  $("#back-opts").addEventListener("change", (e) => {
+    state.back.mode = e.target.value;
+    showBackFields();
+    state.view = hasBack() ? "back" : "front";
+    renderPreview();
+    updatePrice();
+  });
+  let qrTimer;
+  ["#qr-url", "#qr-caption"].forEach((sel) =>
+    $(sel).addEventListener("input", () => {
+      clearTimeout(qrTimer);
+      qrTimer = setTimeout(() => {
+        if (state.view === "back") renderPreview();
+      }, 600);
+    })
+  );
+  $("#generate-back").addEventListener("click", (e) =>
+    design({ details: details(), style: $("#style").value, caption: $("#qr-caption").value, frontDesignId: state.mode === "ai" ? state.designId : null }, e.currentTarget, "back")
+  );
+  $("#apply-back-revision").addEventListener("click", (e) => {
+    const revision = $("#back-revision").value.trim();
+    if (!revision) return $("#back-revision").focus();
+    design({ details: details(), caption: $("#qr-caption").value, previousDesignId: state.back.designId, revision }, e.currentTarget, "back").then(() => {
+      $("#back-revision").value = "";
+    });
+  });
+
+  // ---------- uploads (front and back) ----------
+  function readArtwork(file, nameEl, onReady) {
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) return alertUpload("That file is over 5 MB.");
+    const fail = (text) => (nameEl.innerHTML = `<span style="color:var(--err)">${text}</span>`);
+    if (file.size > 5 * 1024 * 1024) return fail("That file is over 5 MB.");
     const ok = ["image/png", "image/jpeg", "image/svg+xml", "application/pdf"];
-    if (!ok.includes(file.type)) return alertUpload("Please upload a PNG, JPG, SVG or PDF.");
+    if (!ok.includes(file.type)) return fail("Please upload a PNG, JPG, SVG or PDF.");
     const reader = new FileReader();
     reader.onload = () => {
-      state.upload = { name: file.name, mime: file.type, dataUrl: reader.result };
-      $("#file-name").textContent = file.name;
+      nameEl.textContent = file.name;
+      onReady({ name: file.name, mime: file.type, dataUrl: reader.result });
       renderPreview();
     };
     reader.readAsDataURL(file);
   }
-  function alertUpload(text) {
-    $("#file-name").innerHTML = `<span style="color:var(--err)">${text}</span>`;
+
+  function dropzone(zone, input, nameEl, onReady) {
+    input.addEventListener("change", (e) => readArtwork(e.target.files[0], nameEl, onReady));
+    ["dragenter", "dragover"].forEach((ev) => zone.addEventListener(ev, (e) => { e.preventDefault(); zone.classList.add("drag"); }));
+    ["dragleave", "drop"].forEach((ev) => zone.addEventListener(ev, (e) => { e.preventDefault(); zone.classList.remove("drag"); }));
+    zone.addEventListener("drop", (e) => readArtwork(e.dataTransfer.files[0], nameEl, onReady));
   }
-  $("#file").addEventListener("change", (e) => takeFile(e.target.files[0]));
-  ["dragenter", "dragover"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add("drag"); }));
-  ["dragleave", "drop"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove("drag"); }));
-  dz.addEventListener("drop", (e) => takeFile(e.dataTransfer.files[0]));
+
+  dropzone($("#dropzone"), $("#file"), $("#file-name"), (art) => {
+    state.upload = art;
+    state.view = "front";
+  });
+  dropzone($("#back-dropzone"), $("#back-file"), $("#back-file-name"), (art) => {
+    state.back.upload = art;
+    state.view = "back";
+  });
 
   // ---------- checkout ----------
   $("#checkout").addEventListener("click", async (e) => {
@@ -307,6 +404,16 @@
       design = { type: "upload", name: state.upload.name, dataUrl: state.upload.dataUrl };
       d = { name: $("#upload-name").value };
     }
+    const b = state.back;
+    const back = { mode: b.mode };
+    if (b.mode === "ai" || b.mode === "qr") {
+      if (!looksLikeUrl(qrUrl())) return showMsg(msg, "Add the link for the QR code on the back (step 3).", false);
+      if (b.mode === "ai" && !b.designId) return showMsg(msg, "Create your back design first (step 3).", false);
+      Object.assign(back, { url: qrUrl(), caption: $("#qr-caption").value, designId: b.designId });
+    } else if (b.mode === "upload") {
+      if (!b.upload) return showMsg(msg, "Upload your back artwork first (step 3).", false);
+      Object.assign(back, { name: b.upload.name, dataUrl: b.upload.dataUrl });
+    }
     const btn = e.currentTarget;
     btn.disabled = true;
     btn.textContent = "Starting checkout…";
@@ -318,6 +425,7 @@
         finish: state.finish,
         qty: state.qty,
         promo: state.promo,
+        back,
         watchLive: $("#watch-live").checked,
         tiktok: $("#tiktok").value,
         notes: $("#notes").value,

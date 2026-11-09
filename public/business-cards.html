@@ -86,7 +86,44 @@
 
         <hr style="border:0;border-top:1px solid var(--line);margin:30px 0">
 
-        <h3>3. Choose your card</h3>
+        <h3>3. Back of the card</h3>
+        <p class="hint" style="font-size:.95rem;margin-top:-4px">An engraved back is <strong id="back-price">75% off</strong> the front price per card.</p>
+        <div class="opts back-opts" id="back-opts">
+          <label class="opt"><input type="radio" name="back" value="none" checked><span>Blank back<small>Front only</small></span></label>
+          <label class="opt"><input type="radio" name="back" value="ai"><span>QR code + matching design<small>AI designs a back to match your front</small></span></label>
+          <label class="opt"><input type="radio" name="back" value="qr"><span>QR code only<small>Clean layout, ready instantly</small></span></label>
+          <label class="opt"><input type="radio" name="back" value="upload"><span>Upload my own back<small>PNG, JPG, SVG or PDF</small></span></label>
+        </div>
+
+        <div id="back-qr-fields" hidden>
+          <label>QR code link <span class="hint">(where it goes when scanned: website, booking page, reviews…)</span>
+            <input id="qr-url" inputmode="url" autocomplete="url" placeholder="reyesbuilds.com/book">
+          </label>
+          <label>Headline next to the QR code <span class="hint">(optional)</span>
+            <input id="qr-caption" maxlength="40" placeholder="Scan to book">
+          </label>
+        </div>
+        <div id="back-ai-fields" hidden>
+          <button type="button" class="btn btn-dark" id="generate-back">&#10024; Create my back design</button>
+          <div class="msg" id="back-msg" role="status"></div>
+          <div class="revise" id="back-revise">
+            <label>Want changes to the back?
+              <input id="back-revision" placeholder="Add a thin border and make the headline bigger">
+            </label>
+            <button type="button" class="btn btn-outline" id="apply-back-revision">Update back</button>
+          </div>
+        </div>
+        <div id="back-upload-fields" hidden>
+          <label class="dropzone" id="back-dropzone">
+            <input type="file" id="back-file" accept=".png,.jpg,.jpeg,.svg,.pdf" class="sr-only">
+            <strong>Choose the back artwork</strong><br>or drag it here
+            <div id="back-file-name" style="margin-top:8px"></div>
+          </label>
+        </div>
+
+        <hr style="border:0;border-top:1px solid var(--line);margin:30px 0">
+
+        <h3>4. Choose your card</h3>
         <div class="opt-group">
           <span class="opt-title">Thickness</span>
           <div class="opts" id="opt-thickness"></div>
@@ -100,7 +137,7 @@
           <div class="opts" id="opt-qty"></div>
         </div>
 
-        <h3>4. Watch it live <span class="hint">(optional)</span></h3>
+        <h3>5. Watch it live <span class="hint">(optional)</span></h3>
         <label class="check"><input type="checkbox" id="watch-live" checked> Engrave my cards on TikTok Live and give me a shout-out</label>
         <label>Your TikTok handle <span class="hint">(optional)</span><input id="tiktok" placeholder="@yourhandle"></label>
         <label>Notes for us <span class="hint">(optional)</span><textarea id="notes" style="min-height:80px" placeholder="Anything we should know?"></textarea></label>
@@ -125,6 +162,10 @@
 
       <!-- right: preview -->
       <div class="preview-pane">
+        <div class="side-tabs" role="tablist">
+          <button type="button" class="active" data-side="front" role="tab">Front</button>
+          <button type="button" data-side="back" role="tab">Back</button>
+        </div>
         <div class="metal-card" id="card" data-finish="mirror">
           <div class="placeholder" id="placeholder">Your design appears here</div>
         </div>
@@ -132,7 +173,8 @@
         <div class="card" style="margin-top:20px">
           <h3 style="font-size:1rem">Good to know</h3>
           <ul style="margin:0;padding-left:18px;color:var(--muted);font-size:.93rem">
-            <li>Standard 3.5 × 2 in card size, one engraved side.</li>
+            <li>Standard 3.5 × 2 in card size. Engrave the front only, or front and back.</li>
+            <li>QR codes are real and scannable. Point your phone at the preview to test yours.</li>
             <li>Check every letter and number in the preview before ordering. AI can misspell.</li>
             <li>Engraving is one color: designs are previewed and made in black, white and gray.</li>
             <li>We review every design before engraving and will reach out if something won't engrave cleanly.</li>

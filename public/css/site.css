@@ -195,6 +195,11 @@ textarea { min-height: 110px; resize: vertical; }
 .opt input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
 .swatch { display: inline-block; width: 14px; height: 14px; border-radius: 50%; vertical-align: -2px; margin-right: 6px; border: 1px solid rgba(0,0,0,.2); }
 
+.side-tabs { display: inline-flex; gap: 4px; background: var(--bg-soft); border: 1px solid var(--line); border-radius: 10px; padding: 4px; margin-bottom: 14px; }
+.side-tabs button { border: 0; background: transparent; padding: 8px 18px; border-radius: 7px; font: inherit; font-weight: 700; color: var(--muted); cursor: pointer; }
+.side-tabs button.active { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(15,23,42,.12); }
+.back-opts { margin-bottom: 18px; }
+#back-ai-fields, #back-upload-fields { margin-bottom: 8px; }
 .promo-row { display: flex; gap: 10px; margin: 6px 0 12px; }
 .promo-row input { margin-top: 0; text-transform: uppercase; }
 .promo-row .btn { padding: 11px 18px; }

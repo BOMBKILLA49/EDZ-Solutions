@@ -106,11 +106,17 @@
       }).join("");
     }
 
+    const IMG = "width:100%;border-radius:12px;box-shadow:0 8px 20px rgba(15,23,42,.18)";
+    const viewable = (mime) => /^image\/(png|jpeg)$/.test(mime || "");
     function preview(o) {
-      if (o.design_type === "ai") {
-        return `<img alt="Design" src="/api/admin/orders/${o.id}/design?inline=1" style="width:100%;border-radius:12px;box-shadow:0 8px 20px rgba(15,23,42,.18)">`;
-      }
-      return `<div class="file-box">Customer upload<br><strong>${esc(o.upload_name)}</strong></div>`;
+      const front = o.design_type === "ai" || viewable(o.upload_mime)
+        ? `<img alt="Front" src="/api/admin/orders/${o.id}/design?inline=1" style="${IMG}">`
+        : `<div class="file-box">Customer upload<br><strong>${esc(o.upload_name)}</strong></div>`;
+      if (!o.has_back) return `<div class="meta" style="margin-bottom:6px">FRONT</div>${front}`;
+      const back = o.back_mode !== "upload" || viewable(o.back_mime)
+        ? `<img alt="Back" src="/api/admin/orders/${o.id}/design?side=back&inline=1" style="${IMG}">`
+        : `<div class="file-box">Back upload<br><strong>${esc(o.back_name)}</strong></div>`;
+      return `<div class="meta" style="margin-bottom:6px">FRONT</div>${front}<div class="meta" style="margin:14px 0 6px">BACK</div>${back}`;
     }
 
     function renderOrders() {
@@ -140,10 +146,13 @@
               <dt>Card text</dt><dd>${esc([d.name, d.title, d.company, d.phone, d.email, d.website, d.tagline].filter(Boolean).join(" · ") || "—")}</dd>
               <dt>Contact</dt><dd>${esc([o.customer_email, o.customer_phone].filter(Boolean).join(" · "))}</dd>
               <dt>Ship to</dt><dd>${esc(ship)}</dd>
+              <dt>Back</dt><dd>${o.has_back ? ({ ai: "AI design + QR code", qr: "QR code layout", upload: "Customer upload" })[o.back_mode] : "Blank"}</dd>
+              ${o.qr_url ? `<dt>QR link</dt><dd><a href="${esc(o.qr_url)}" target="_blank" rel="noopener">${esc(o.qr_url)}</a></dd>` : ""}
               ${o.notes ? `<dt>Notes</dt><dd>${esc(o.notes)}</dd>` : ""}
             </dl>
             <div class="actions">
-              <a class="btn btn-dark" href="/api/admin/orders/${o.id}/design">Download design</a>
+              <a class="btn btn-dark" href="/api/admin/orders/${o.id}/design">Download front</a>
+              ${o.has_back ? `<a class="btn btn-dark" href="/api/admin/orders/${o.id}/design?side=back">Download back</a>` : ""}
               ${next ? `<button class="btn btn-primary" data-id="${o.id}" data-status="${next[0]}">${next[1]}</button>` : ""}
               ${o.status !== "paid" ? `<button class="btn btn-outline" data-id="${o.id}" data-status="${o.status === "shipped" ? "engraved" : "paid"}">Undo</button>` : ""}
             </div>

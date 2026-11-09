@@ -21,14 +21,19 @@ const cardQuantity = [
   { qty: 100, discount: 0.2 },
 ];
 
-function quoteCard({ thickness, finish, qty }) {
+// An engraved back costs 25% of the front price per card (75% off).
+const BACK_SHARE = 0.25;
+
+function quoteCard({ thickness, finish, qty, back }) {
   const t = cardThickness.find((x) => x.id === thickness);
   const f = cardFinish.find((x) => x.id === finish);
   const q = cardQuantity.find((x) => x.qty === Number(qty));
   if (!t || !f || !q) return null;
   // Stripe charges a whole-cent unit price × quantity, so the total is built the same way.
-  const eachCents = Math.round((t.perCard + f.upcharge) * (1 - q.discount) * 100);
-  return { thickness: t, finish: f, qty: q.qty, eachCents, totalCents: eachCents * q.qty };
+  const frontCents = Math.round((t.perCard + f.upcharge) * (1 - q.discount) * 100);
+  const backCents = back ? Math.round(frontCents * BACK_SHARE) : 0;
+  const eachCents = frontCents + backCents;
+  return { thickness: t, finish: f, qty: q.qty, frontCents, backCents, eachCents, totalCents: eachCents * q.qty };
 }
 
-module.exports = { cardThickness, cardFinish, cardQuantity, quoteCard };
+module.exports = { cardThickness, cardFinish, cardQuantity, quoteCard, BACK_SHARE };
