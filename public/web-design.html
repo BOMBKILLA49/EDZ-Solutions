@@ -17,7 +17,26 @@
       <div class="eyebrow" style="color:var(--accent)">Web design</div>
       <h1>A website that actually brings in business</h1>
       <p class="lead">We design, build, host and maintain websites for small businesses. You get a fast, professional site, and we handle the technical side.</p>
-      <a class="btn btn-primary" href="#start">Start your project</a>
+      <div class="btn-row">
+        <a class="btn btn-primary" href="#plans">See plans &amp; pricing</a>
+        <a class="btn btn-ghost" href="#start">Custom project</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="plans">
+    <div class="wrap">
+      <div class="eyebrow">Plans &amp; pricing</div>
+      <h2>Pick a plan and get started today</h2>
+      <p class="lead">We build it for you. No calls needed: choose a plan, tell us about your business, and pay the setup online. Your monthly plan starts around when your site goes live. Month to month, cancel anytime.</p>
+      <div class="plans" id="plan-cards"></div>
+      <div class="card custom-plan">
+        <div>
+          <h3>Custom</h3>
+          <p style="margin:0">Something bigger or different? Web apps, multi-location businesses, integrations, migrations. Tell us what you need and we'll put together a quote.</p>
+        </div>
+        <a class="btn btn-dark" href="#start">Request a custom quote</a>
+      </div>
     </div>
   </section>
 
@@ -103,6 +122,7 @@
 
   <script src="/js/site.js"></script>
   <script src="/js/portfolio.js"></script>
+  <script src="/js/plans.js"></script>
   <script>
     const form = document.getElementById("inquiry");
     form.addEventListener("submit", async (e) => {

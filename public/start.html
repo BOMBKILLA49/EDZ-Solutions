@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Start Your Website | EDZ Solutions</title>
+  <meta name="description" content="Tell us about your business and start your website plan with EDZ Solutions.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/png" href="/img/edz-icon.png">
+  <link rel="apple-touch-icon" href="/img/edz-icon.png">
+  <link rel="stylesheet" href="/css/site.css">
+  <style>
+    .start { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 36px; align-items: start; }
+    @media (max-width: 900px) { .start { grid-template-columns: 1fr; } }
+    .summary { position: sticky; top: 90px; }
+    @media (max-width: 900px) { .summary { position: static; order: -1; } }
+    .summary .price { font-size: 1.8rem; font-weight: 800; color: var(--ink); }
+    .summary .price small { font-size: .95rem; color: var(--muted); font-weight: 600; }
+    .summary ul { padding-left: 18px; margin: 12px 0 0; color: var(--muted); font-size: .92rem; }
+    .summary select { margin-bottom: 4px; }
+    fieldset { border: 0; padding: 0; margin: 0 0 26px; }
+    legend { font-weight: 800; font-size: 1.15rem; color: var(--ink); margin-bottom: 12px; }
+    .due { display: flex; justify-content: space-between; border-top: 1px solid var(--line); padding-top: 12px; margin-top: 14px; font-weight: 700; color: var(--ink); }
+  </style>
+</head>
+<body>
+  <section class="page-head" style="padding:48px 0 40px">
+    <div class="wrap">
+      <div class="eyebrow" style="color:var(--accent)">Start your website</div>
+      <h1>Tell us about your business</h1>
+      <p class="lead">This takes about 5 minutes. We'll use it to build your site, then email you a preview before it goes live.</p>
+    </div>
+  </section>
+
+  <section class="section" style="padding-top:40px">
+    <div class="wrap start">
+      <form id="project" novalidate>
+        <fieldset>
+          <legend>Your business</legend>
+          <div class="row">
+            <label>Business name<input name="business" required autocomplete="organization"></label>
+            <label>What kind of business?<input name="industry" placeholder="Roofing, bakery, hair salon…"></label>
+          </div>
+          <label>Describe your business <span class="hint">(what you do, who you serve, what makes you different)</span><textarea name="description"></textarea></label>
+          <label>Services or products to list <span class="hint">(one per line is fine)</span><textarea name="services" style="min-height:90px"></textarea></label>
+          <label>Area you serve <span class="hint">(towns, counties, or "nationwide")</span><input name="area"></label>
+        </fieldset>
+
+        <fieldset id="feature-set" hidden>
+          <legend>Your power feature</legend>
+          <label>Pick one to include with your Business plan
+            <select name="feature" id="feature"></select>
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>What goes on the site</legend>
+          <div class="row">
+            <label>Phone<input name="phone" type="tel"></label>
+            <label>Email<input name="email" type="email"></label>
+          </div>
+          <label>Address <span class="hint">(optional; leave blank if you don't want it shown)</span><input name="address"></label>
+          <label>Hours <span class="hint">(optional)</span><input name="hours" placeholder="Mon–Fri 8am–5pm, Sat by appointment"></label>
+        </fieldset>
+
+        <fieldset>
+          <legend>Look &amp; domain</legend>
+          <label>Do you have a domain (web address)?
+            <select name="domainStatus" id="domain-status">
+              <option value="have">Yes, I have one</option>
+              <option value="need">No, I need one (about $15/year, billed at cost)</option>
+            </select>
+          </label>
+          <label><span id="domain-label">Your domain</span><input name="domain" placeholder="yourbusiness.com"></label>
+          <label>Logo <span class="hint">(optional; PNG, JPG, SVG or PDF, up to 5 MB)</span>
+            <input type="file" id="logo" accept=".png,.jpg,.jpeg,.svg,.pdf">
+          </label>
+          <label>Colors you like <span class="hint">(optional)</span><input name="colors" placeholder="Navy and orange, match my logo…"></label>
+          <label>Websites you like <span class="hint">(optional; links and what you like about them)</span><textarea name="likes" style="min-height:80px"></textarea></label>
+          <label>Anything else? <span class="hint">(optional)</span><textarea name="notes" style="min-height:80px"></textarea></label>
+        </fieldset>
+
+        <fieldset>
+          <legend>How we reach you</legend>
+          <div class="row">
+            <label>Your name<input name="contactName" required autocomplete="name"></label>
+            <label>Your email<input name="contactEmail" type="email" required autocomplete="email"></label>
+          </div>
+          <label>Your phone <span class="hint">(optional)</span><input name="contactPhone" type="tel" autocomplete="tel"></label>
+        </fieldset>
+
+        <button class="btn btn-primary" type="submit" id="pay" style="width:100%">Continue to secure payment</button>
+        <div class="msg" id="msg" role="status"></div>
+        <p class="hint" style="margin-top:12px">Payments are processed by Stripe. Your monthly plan starts around when your site goes live, and you can cancel anytime.</p>
+      </form>
+
+      <aside class="card summary">
+        <label>Your plan<select id="plan"></select></label>
+        <div class="price" id="plan-price"></div>
+        <div class="hint" id="plan-delivery"></div>
+        <ul id="plan-features"></ul>
+        <div class="due"><span>Due today</span><span id="due-today"></span></div>
+        <div class="hint" id="monthly-start" style="margin-top:6px"></div>
+        <p class="hint" style="margin:14px 0 0">Need something bigger? <a href="/web-design#start">Request a custom quote</a>.</p>
+      </aside>
+    </div>
+  </section>
+
+  <script src="/js/site.js"></script>
+  <script src="/js/start.js"></script>
+</body>
+</html>

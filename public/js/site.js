@@ -48,7 +48,7 @@ const SITE = {
         <div><h4>Company</h4><ul>
           <li><a href="/#work">Our work</a></li>
           <li><a href="/live">TikTok Live</a></li>
-          <li><a href="/web-design#start">Start a project</a></li>
+          <li><a href="/web-design#plans">Website plans</a></li>
         </ul></div>
         <div><h4>Contact</h4><ul>
           <li><a href="mailto:${SITE.email}">${SITE.email}</a></li>

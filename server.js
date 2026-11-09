@@ -5,6 +5,7 @@ const OpenAI = require("openai");
 const Stripe = require("stripe");
 const catalog = require("./config/catalog");
 const shipping = require("./config/shipping");
+const plans = require("./config/plans");
 const { pool, migrate } = require("./lib/db");
 const { sendAlert } = require("./lib/mailer");
 const cardback = require("./lib/cardback");
@@ -30,7 +31,8 @@ app.post("/api/stripe-webhook", express.raw({ type: "application/json" }), async
   }
   if (event.type === "checkout.session.completed" || event.type === "checkout.session.async_payment_succeeded") {
     try {
-      await markPaid(event.data.object.id);
+      if (event.data.object.metadata?.kind === "website") await markProjectPaid(event.data.object.id);
+      else await markPaid(event.data.object.id);
     } catch (err) {
       console.error("webhook markPaid failed:", err);
       return res.status(500).end(); // Stripe retries
@@ -531,6 +533,159 @@ app.get("/api/order-status", async (req, res) => {
   }
 });
 
+// ---------- website plans ----------
+
+app.get("/api/plans", (req, res) => res.json({ plans: plans.PLANS, powerFeatures: plans.POWER_FEATURES }));
+
+app.post("/api/plan-checkout", async (req, res) => {
+  if (!stripe) return res.status(503).json({ error: "Online checkout isn't switched on yet." });
+  const plan = plans.planById(req.body.plan);
+  if (!plan) return res.status(400).json({ error: "Pick a plan." });
+  const b = req.body || {};
+  const data = {
+    business: clean(b.business, 120),
+    industry: clean(b.industry, 120),
+    description: clean(b.description, 3000),
+    services: clean(b.services, 2000),
+    area: clean(b.area, 500),
+    phone: clean(b.phone, 40),
+    email: clean(b.email, 120),
+    address: clean(b.address, 300),
+    hours: clean(b.hours, 500),
+    domain: clean(b.domain, 120),
+    domainStatus: ["have", "need"].includes(b.domainStatus) ? b.domainStatus : "have",
+    colors: clean(b.colors, 300),
+    likes: clean(b.likes, 1000),
+    feature: plan.id === "business" ? clean(b.feature, 40) : null,
+    notes: clean(b.notes, 3000),
+    contactName: clean(b.contactName, 120),
+    contactEmail: clean(b.contactEmail, 120),
+    contactPhone: clean(b.contactPhone, 40),
+  };
+  if (!data.business) return res.status(400).json({ error: "Add your business name." });
+  if (!data.contactName || !/^\S+@\S+\.\S+$/.test(data.contactEmail)) return res.status(400).json({ error: "Add your name and a valid email so we can reach you." });
+  if (plan.id === "business" && !plans.POWER_FEATURES.some((f) => f.id === data.feature)) return res.status(400).json({ error: "Pick your power feature." });
+
+  let logo = null;
+  if (b.logo?.dataUrl) {
+    const m = /^data:(image\/(png|jpeg|svg\+xml)|application\/pdf);base64,(.*)$/s.exec(b.logo.dataUrl);
+    if (!m) return res.status(400).json({ error: "Logo must be a PNG, JPG, SVG or PDF." });
+    logo = { mime: m[1], name: clean(b.logo.name, 120), data: Buffer.from(m[3], "base64") };
+  }
+
+  const id = crypto.randomUUID();
+  try {
+    // Setup fee is charged now; the monthly plan starts after the trial (about the delivery time).
+    const session = await stripe.checkout.sessions.create({
+      mode: "subscription",
+      line_items: [
+        {
+          quantity: 1,
+          price_data: {
+            currency: "usd",
+            unit_amount: plan.monthlyCents,
+            recurring: { interval: "month" },
+            product_data: { name: `${plan.name} website plan — monthly` },
+          },
+        },
+        {
+          quantity: 1,
+          price_data: {
+            currency: "usd",
+            unit_amount: plan.setupCents,
+            product_data: { name: `${plan.name} website setup (one time)` },
+          },
+        },
+      ],
+      subscription_data: {
+        trial_period_days: plan.trialDays,
+        description: `${plan.name} website plan for ${data.business}`,
+        metadata: { project_id: id, plan: plan.id },
+      },
+      customer_email: data.contactEmail,
+      metadata: { kind: "website", project_id: id, plan: plan.id },
+      custom_text: {
+        submit: { message: `You pay the ${(plan.setupCents / 100).toFixed(0)} dollar setup today. The monthly plan starts in ${plan.trialDays} days, around when your site goes live. Cancel anytime.` },
+      },
+      success_url: `${SITE_URL}/project-started?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${SITE_URL}/start?plan=${plan.id}`,
+    });
+    await pool.query(
+      `INSERT INTO projects (id, plan, stripe_session, data, logo_name, logo_mime, logo_data) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [id, plan.id, session.id, data, logo?.name || null, logo?.mime || null, logo?.data || null]
+    );
+    res.json({ url: session.url });
+  } catch (err) {
+    console.error("plan checkout error:", err);
+    res.status(500).json({ error: "Checkout couldn't start. Please try again." });
+  }
+});
+
+// Marks a website project paid exactly once, then emails the project details.
+async function markProjectPaid(sessionId) {
+  const session = await stripe.checkout.sessions.retrieve(sessionId);
+  if (!["paid", "no_payment_required"].includes(session.payment_status)) return null;
+  const cust = session.customer_details || {};
+  const { rows } = await pool.query(
+    `UPDATE projects SET status='new', paid_at=now(), stripe_subscription=$2, stripe_customer=$3, customer_email=$4, customer_name=$5
+     WHERE stripe_session=$1 AND status='pending_payment' RETURNING *`,
+    [sessionId, session.subscription || null, session.customer || null, cust.email || null, cust.name || null]
+  );
+  if (rows[0]) await sendProjectAlert(rows[0]).catch((e) => console.error("project alert failed:", e));
+  return rows[0] || null;
+}
+
+async function sendProjectAlert(p) {
+  const plan = plans.planById(p.plan);
+  const d = p.data || {};
+  const feature = plans.POWER_FEATURES.find((f) => f.id === d.feature);
+  const lines = [
+    `NEW WEBSITE PROJECT — ${plan.name} ($${(plan.setupCents / 100).toFixed(2)} setup paid, $${(plan.monthlyCents / 100).toFixed(2)}/mo starts in ${plan.trialDays} days)`,
+    `Deliver by: ${plan.delivery.replace(/^Live in /, "")}`,
+    ``,
+    `Business: ${d.business}${d.industry ? ` (${d.industry})` : ""}`,
+    d.description ? `About: ${d.description}` : null,
+    d.services ? `Services: ${d.services}` : null,
+    d.area ? `Service area: ${d.area}` : null,
+    feature ? `Power feature: ${feature.label}` : null,
+    `Domain: ${d.domainStatus === "need" ? `NEEDS ONE${d.domain ? ` (wants ${d.domain})` : ""}` : d.domain || "(not given)"}`,
+    d.colors ? `Colors: ${d.colors}` : null,
+    d.likes ? `Sites they like: ${d.likes}` : null,
+    ``,
+    `On the site — phone: ${d.phone || "-"} · email: ${d.email || "-"} · address: ${d.address || "-"}`,
+    d.hours ? `Hours: ${d.hours}` : null,
+    d.notes ? `Notes: ${d.notes}` : null,
+    ``,
+    `Contact: ${d.contactName} · ${d.contactEmail} · ${d.contactPhone || ""}`,
+    `Logo: ${p.logo_name ? `${p.logo_name} (attached)` : "none uploaded"}`,
+    ``,
+    `Projects: ${SITE_URL}/admin`,
+  ].filter((l) => l !== null);
+  const text = lines.join("\n");
+  await sendAlert({
+    subject: `New ${plan.name} website: ${d.business}`,
+    text,
+    html: `<pre style="font:14px/1.5 -apple-system,Segoe UI,sans-serif;white-space:pre-wrap">${escapeHtml(text)}</pre>`,
+    attachments: p.logo_data ? [{ filename: p.logo_name || "logo", contentType: p.logo_mime, content: p.logo_data }] : [],
+  });
+}
+
+app.get("/api/project-status", async (req, res) => {
+  if (!stripe) return res.status(503).json({ error: "Checkout is off." });
+  const sid = String(req.query.session_id || "");
+  if (!/^cs_(test|live)_\w+$/.test(sid)) return res.status(400).json({ error: "Bad session." });
+  try {
+    await markProjectPaid(sid);
+    const { rows } = await pool.query("SELECT status, plan FROM projects WHERE stripe_session=$1", [sid]);
+    const p = rows[0];
+    const plan = p && plans.planById(p.plan);
+    res.json(p ? { status: p.status, plan: plan.name, delivery: plan.delivery, trialDays: plan.trialDays } : { status: "unknown" });
+  } catch (err) {
+    console.error("project-status error:", err);
+    res.status(500).json({ error: "Couldn't check the project." });
+  }
+});
+
 // ---------- website project inquiries ----------
 
 app.post("/api/inquiry", async (req, res) => {
@@ -631,6 +786,27 @@ app.post("/api/admin/promos", requireAdmin, async (req, res) => {
 
 app.post("/api/admin/promos/:code/active", requireAdmin, async (req, res) => {
   await pool.query("UPDATE promos SET active=$2 WHERE code=$1", [req.params.code, Boolean(req.body.active)]);
+  res.json({ ok: true });
+});
+
+app.get("/api/admin/projects", requireAdmin, async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT id, created_at, paid_at, status, plan, stripe_subscription, data, logo_name, customer_email, customer_name
+     FROM projects WHERE status <> 'pending_payment' ORDER BY paid_at DESC LIMIT 200`
+  );
+  res.json({ projects: rows.map((p) => ({ ...p, planName: plans.planById(p.plan)?.name || p.plan })), powerFeatures: plans.POWER_FEATURES });
+});
+
+app.get("/api/admin/projects/:id/logo", requireAdmin, async (req, res) => {
+  const { rows } = await pool.query("SELECT logo_name, logo_mime, logo_data FROM projects WHERE id=$1", [req.params.id]).catch(() => ({ rows: [] }));
+  if (!rows[0]?.logo_data) return res.status(404).send("No logo");
+  res.set("Content-Type", rows[0].logo_mime).attachment(rows[0].logo_name || "logo").send(rows[0].logo_data);
+});
+
+app.post("/api/admin/projects/:id/status", requireAdmin, async (req, res) => {
+  const status = String(req.body.status || "");
+  if (!["new", "in_progress", "launched", "canceled"].includes(status)) return res.status(400).json({ error: "Bad status" });
+  await pool.query("UPDATE projects SET status=$2 WHERE id=$1 AND status <> 'pending_payment'", [req.params.id, status]);
   res.json({ ok: true });
 });
 

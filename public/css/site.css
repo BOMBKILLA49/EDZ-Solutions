@@ -211,6 +211,24 @@ textarea { min-height: 110px; resize: vertical; }
   .mini-note:not([hidden]) { display: block !important; margin: 0 0 12px; }
   .preview-pane .side-tabs, .preview-pane #card, .preview-pane #preview-note { display: none; }
 }
+/* plans */
+.plans { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; margin-top: 32px; align-items: stretch; }
+@media (max-width: 1080px) { .plans { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 620px) { .plans { grid-template-columns: 1fr; } }
+.plan { display: flex; flex-direction: column; padding: 24px; position: relative; }
+.plan.popular { border: 2px solid var(--accent); box-shadow: 0 16px 40px rgba(245,158,11,.18); }
+.plan .ribbon { position: absolute; top: -12px; left: 24px; background: var(--accent); color: var(--ink); font-size: .72rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; padding: 4px 10px; border-radius: 99px; }
+.plan h3 { margin-bottom: 4px; }
+.plan .tagline { color: var(--muted); font-size: .93rem; min-height: 2.8em; }
+.plan .price { font-size: 2rem; font-weight: 800; color: var(--ink); line-height: 1.1; margin-top: 10px; }
+.plan .price small { font-size: .95rem; font-weight: 600; color: var(--muted); }
+.plan .setup { color: var(--muted); font-size: .9rem; margin-bottom: 14px; }
+.plan ul { list-style: none; padding: 0; margin: 0 0 16px; font-size: .92rem; flex: 1; }
+.plan li { padding: 6px 0 6px 24px; position: relative; border-top: 1px solid var(--line); }
+.plan li::before { content: "✓"; position: absolute; left: 2px; color: var(--accent-dark); font-weight: 800; }
+.plan .delivery { font-size: .85rem; font-weight: 700; color: var(--ink); margin-bottom: 12px; }
+.plan .upgrade { font-size: .82rem; color: var(--accent-dark); background: #fffbeb; border-radius: 8px; padding: 8px 10px; margin-bottom: 14px; }
+.custom-plan { display: flex; justify-content: space-between; align-items: center; gap: 20px; margin-top: 18px; flex-wrap: wrap; }
 .promo-row { display: flex; gap: 10px; margin: 6px 0 12px; }
 .promo-row input { margin-top: 0; text-transform: uppercase; }
 .promo-row .btn { padding: 11px 18px; }

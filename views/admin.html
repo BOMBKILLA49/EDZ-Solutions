@@ -55,6 +55,9 @@
 
   <main class="wrap" style="padding-top:28px;padding-bottom:60px">
     <div id="list"></div>
+    <h2 style="margin-top:40px">Website projects</h2>
+    <div id="projects"></div>
+
     <h2 style="margin-top:40px">Promo codes</h2>
     <div class="card">
       <form class="promo-form" id="promo-form">
@@ -173,6 +176,56 @@
         : `<div class="empty" style="padding:20px 0">No inquiries yet.</div>`;
     }
 
+    const PSTATUS = { new: "New", in_progress: "In progress", launched: "Launched", canceled: "Canceled" };
+    const PNEXT = { new: ["in_progress", "Start building"], in_progress: ["launched", "Mark launched"] };
+    async function loadProjects() {
+      const { projects, powerFeatures } = await (await fetch("/api/admin/projects")).json();
+      const feat = Object.fromEntries(powerFeatures.map((f) => [f.id, f.label]));
+      document.getElementById("projects").innerHTML = projects.length
+        ? projects.map((p) => {
+            const d = p.data || {};
+            const next = PNEXT[p.status];
+            return `<div class="card" style="margin-bottom:14px">
+              <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+                <span class="pill ${p.status === "launched" ? "shipped" : p.status === "in_progress" ? "engraved" : "paid"}">${PSTATUS[p.status] || p.status}</span>
+                <span class="pill live" style="background:var(--ink)">${esc(p.planName)}</span>
+                <span class="meta">Paid ${when(p.paid_at)}</span>
+              </div>
+              <h3>${esc(d.business)}${d.industry ? ` <span class="meta">· ${esc(d.industry)}</span>` : ""}</h3>
+              <dl class="kv">
+                <dt>Contact</dt><dd>${esc([d.contactName, d.contactEmail, d.contactPhone].filter(Boolean).join(" · "))}</dd>
+                ${d.description ? `<dt>About</dt><dd>${esc(d.description)}</dd>` : ""}
+                ${d.services ? `<dt>Services</dt><dd>${esc(d.services)}</dd>` : ""}
+                ${d.area ? `<dt>Area</dt><dd>${esc(d.area)}</dd>` : ""}
+                ${d.feature ? `<dt>Power feature</dt><dd>${esc(feat[d.feature] || d.feature)}</dd>` : ""}
+                <dt>Domain</dt><dd>${d.domainStatus === "need" ? `<strong>Needs one</strong>${d.domain ? ` (wants ${esc(d.domain)})` : ""}` : esc(d.domain || "—")}</dd>
+                <dt>On the site</dt><dd>${esc([d.phone, d.email, d.address].filter(Boolean).join(" · ") || "—")}${d.hours ? `\n${esc(d.hours)}` : ""}</dd>
+                ${d.colors ? `<dt>Colors</dt><dd>${esc(d.colors)}</dd>` : ""}
+                ${d.likes ? `<dt>Sites they like</dt><dd>${esc(d.likes)}</dd>` : ""}
+                ${d.notes ? `<dt>Notes</dt><dd>${esc(d.notes)}</dd>` : ""}
+              </dl>
+              <div class="actions">
+                ${p.logo_name ? `<a class="btn btn-dark" href="/api/admin/projects/${p.id}/logo">Download logo</a>` : ""}
+                ${next ? `<button class="btn btn-primary" data-project="${p.id}" data-pstatus="${next[0]}">${next[1]}</button>` : ""}
+                ${p.status !== "canceled" && p.status !== "launched" ? `<button class="btn btn-outline" data-project="${p.id}" data-pstatus="canceled">Canceled</button>` : ""}
+              </div>
+            </div>`;
+          }).join("")
+        : `<div class="empty" style="padding:20px 0">No website projects yet.</div>`;
+    }
+
+    document.getElementById("projects").addEventListener("click", async (e) => {
+      const b = e.target.closest("button[data-project]");
+      if (!b) return;
+      if (b.dataset.pstatus === "canceled" && !confirm("Mark this project canceled? (This doesn't cancel their Stripe subscription — do that in Stripe.)")) return;
+      await fetch(`/api/admin/projects/${b.dataset.project}/status`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: b.dataset.pstatus }),
+      });
+      loadProjects();
+    });
+
     async function loadPromos() {
       const { promos } = await (await fetch("/api/admin/promos")).json();
       document.getElementById("promo-list").innerHTML = promos.length
@@ -220,6 +273,7 @@
       renderOrders();
       renderInquiries();
       loadPromos();
+      loadProjects();
     }
 
     document.getElementById("filters").addEventListener("click", (e) => {
