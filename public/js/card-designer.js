@@ -72,7 +72,7 @@
   const marksCache = new Map();
 
   function engravingMarks(img) {
-    const w = Math.min(img.naturalWidth, 1200);
+    const w = Math.min(img.naturalWidth, 1000);
     const h = Math.round((img.naturalHeight * w) / img.naturalWidth);
     const c = document.createElement("canvas");
     c.width = w;
@@ -81,13 +81,18 @@
     ctx.drawImage(img, 0, 0, w, h);
     const px = ctx.getImageData(0, 0, w, h).data;
     const lum = new Float32Array(w * h);
+    const hi = new Float32Array(w * h); // brightest channel
+    const lo = new Float32Array(w * h); // darkest channel
     const hist = new Uint32Array(256);
     for (let i = 0, j = 0; j < lum.length; i += 4, j++) {
       // Transparent areas of an upload count as bare metal (white).
       const a = px[i + 3] / 255;
-      const v = (0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2]) * a + 255 * (1 - a);
-      lum[j] = v;
-      hist[v | 0]++;
+      const over = (c) => c * a + 255 * (1 - a);
+      const r = over(px[i]), g = over(px[i + 1]), b = over(px[i + 2]);
+      lum[j] = 0.299 * r + 0.587 * g + 0.114 * b;
+      hi[j] = Math.max(r, g, b);
+      lo[j] = Math.min(r, g, b);
+      hist[lum[j] | 0]++;
     }
     const pct = (p) => {
       let n = 0;
@@ -100,12 +105,30 @@
     const bg = flip ? 255 - pct(0.25) : pct(0.75);
     const ink = flip ? 255 - pct(0.98) : pct(0.02);
     const range = Math.max(bg - ink, 24);
-    const marks = new Uint8ClampedArray(w * h);
+    const level = new Float32Array(w * h);
     for (let j = 0; j < lum.length; j++) {
-      const v = flip ? 255 - lum[j] : lum[j];
+      // Colored parts of the art (like orange lettering) engrave fully, so judge each
+      // pixel by its brightest channel on dark art and its darkest channel on light art.
+      const v = flip ? 255 - hi[j] : lo[j];
       // Ignore faint texture the AI paints into its background (brushed-metal streaks).
-      const t = Math.min(Math.max(((bg - v) / range - 0.15) / 0.85, 0), 1);
-      marks[j] = Math.pow(t, 0.8) * 255;
+      level[j] = Math.min(Math.max(((bg - v) / range - 0.15) / 0.85, 0), 1);
+    }
+    // The laser either marks a spot or doesn't, so in-between shades come out as fine
+    // dots. Floyd-Steinberg dithering gives the preview that same grainy look.
+    const marks = new Uint8ClampedArray(w * h);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const j = y * w + x;
+        const on = level[j] >= 0.5 ? 1 : 0;
+        marks[j] = on * 255;
+        const err = level[j] - on;
+        if (x + 1 < w) level[j + 1] += (err * 7) / 16;
+        if (y + 1 < h) {
+          if (x > 0) level[j + w - 1] += (err * 3) / 16;
+          level[j + w] += (err * 5) / 16;
+          if (x + 1 < w) level[j + w + 1] += err / 16;
+        }
+      }
     }
     return { w, h, marks };
   }
