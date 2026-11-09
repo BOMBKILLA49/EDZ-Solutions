@@ -109,16 +109,30 @@
     })
   );
 
+  // The server starts the design and hands back a job id; check every 2 seconds until it's ready.
+  async function waitForDesign(body) {
+    const { jobId } = await postJSON("/api/design", body);
+    const deadline = Date.now() + 3 * 60 * 1000;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 2000));
+      const res = await fetch(`/api/design/${jobId}`);
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || "The designer hit a snag. Please try again.");
+      if (out.status === "done") return out;
+    }
+    throw new Error("The designer is taking too long. Please try again.");
+  }
+
   async function design(body, btn) {
     const msg = $("#ai-msg");
     msg.className = "msg";
     const buttons = [$("#generate"), $("#apply-revision"), $("#new-design")];
     buttons.forEach((b) => (b.disabled = true));
     const label = btn.textContent;
-    btn.textContent = "Designing… (about 30–40 seconds)";
+    btn.textContent = "Designing… (30–60 seconds)";
     card.classList.add("loading");
     try {
-      const out = await postJSON("/api/design", body);
+      const out = await waitForDesign(body);
       state.svg = out.svg;
       $("#preview-note").textContent = out.note || "";
       $("#revise").classList.add("show");

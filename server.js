@@ -126,6 +126,7 @@ Output one SVG for the FRONT of a 3.5 x 2 inch card.
 - Fonts: font-family must be one of sans-serif, serif, monospace (optionally with font-weight). No web fonts.
 - Keep all content at least 45 units inside every edge. Smallest text is font-size 22. Lines and strokes are at least 2 units wide.
 - Use every contact detail provided exactly as written, spelled exactly. Leave out fields that are empty. Never invent phone numbers, emails or names.
+- If the customer asks for a picture (a house, truck, job site, tool, animal...), draw it as a clean, bold line-art illustration that engraves well: simple outlines and solid shapes, no tiny detail, kept to one area of the card so the text stays readable. Keep the SVG compact.
 - Simple geometric shapes, rules, borders and line icons (phone, mail, globe) drawn with paths are welcome. A simple monogram or mark built from the company initials is fine. Never reproduce another company's logo or trademark.
 - Make it look professionally designed: clear hierarchy, aligned edges, generous spacing, nothing overlapping.
 
@@ -141,7 +142,60 @@ const DESIGN_SCHEMA = {
   additionalProperties: false,
 };
 
-app.post("/api/design", async (req, res) => {
+// A detailed design can take Claude 30-60 seconds, longer than Heroku lets one request
+// run (30s). So POST /api/design starts the work and returns a job id right away, and
+// the page polls GET /api/design/:id until it's done. Jobs live in memory on the one dyno.
+const designJobs = new Map();
+const JOB_TTL_MS = 15 * 60 * 1000;
+
+class DesignError extends Error {
+  constructor(status, message) {
+    super(message);
+    this.status = status;
+  }
+}
+
+async function runDesign(prompt) {
+  let response;
+  try {
+    response = await anthropic.beta.messages.create({
+      model: "claude-opus-5",
+      max_tokens: 16000,
+      betas: ["server-side-fallback-2026-07-01"],
+      fallbacks: "default",
+      system: DESIGN_SYSTEM,
+      output_config: {
+        effort: "medium",
+        format: { type: "json_schema", schema: DESIGN_SCHEMA },
+      },
+      messages: [{ role: "user", content: prompt }],
+    });
+  } catch (err) {
+    console.error("design error:", err);
+    if (err instanceof Anthropic.RateLimitError) throw new DesignError(503, "The designer is busy. Try again in a minute.");
+    throw new DesignError(500, "The designer hit a snag. Please try again.");
+  }
+
+  const u = response.usage;
+  const cost = (u.input_tokens * 5 + u.output_tokens * 25) / 1e6;
+  console.log(`design: ${u.input_tokens} in / ${u.output_tokens} out tokens, ~$${cost.toFixed(3)}`);
+
+  if (response.stop_reason === "refusal") {
+    throw new DesignError(422, "That design request can't be made. Try describing it differently.");
+  }
+  try {
+    const text = response.content.filter((b) => b.type === "text").map((b) => b.text).join("");
+    const parsed = JSON.parse(text);
+    const svg = sanitizeSvg(parsed.svg);
+    if (!svg) throw new Error("No SVG in response");
+    return { svg, note: clean(parsed.note, 300) };
+  } catch (err) {
+    console.error("design parse error:", err, "stop_reason:", response.stop_reason);
+    throw new DesignError(500, "The designer hit a snag. Please try again.");
+  }
+}
+
+app.post("/api/design", (req, res) => {
   if (!anthropic) return res.status(503).json({ error: "The AI designer isn't switched on yet." });
   if (rateLimited(req.ip)) return res.status(429).json({ error: "Design limit reached for now. Try again in an hour." });
 
@@ -163,39 +217,24 @@ app.post("/api/design", async (req, res) => {
     prompt += `\n\nHere is the current design:\n${previousSvg}\n\nRevise it: ${revision}`;
   }
 
-  try {
-    const response = await anthropic.beta.messages.create({
-      model: "claude-opus-5",
-      max_tokens: 16000,
-      betas: ["server-side-fallback-2026-07-01"],
-      fallbacks: "default",
-      system: DESIGN_SYSTEM,
-      output_config: {
-        effort: "medium",
-        format: { type: "json_schema", schema: DESIGN_SCHEMA },
-      },
-      messages: [{ role: "user", content: prompt }],
-    });
+  for (const [id, job] of designJobs) if (Date.now() - job.createdAt > JOB_TTL_MS) designJobs.delete(id);
+  const id = crypto.randomUUID();
+  const job = { createdAt: Date.now(), status: "working" };
+  designJobs.set(id, job);
+  runDesign(prompt).then(
+    (result) => Object.assign(job, { status: "done", result }),
+    (err) => Object.assign(job, { status: "error", httpStatus: err.status || 500, error: err.message })
+  );
+  res.status(202).json({ jobId: id });
+});
 
-    const u = response.usage;
-    const cost = (u.input_tokens * 5 + u.output_tokens * 25) / 1e6;
-    console.log(`design: ${u.input_tokens} in / ${u.output_tokens} out tokens, ~$${cost.toFixed(3)}`);
-
-    if (response.stop_reason === "refusal") {
-      return res.status(422).json({ error: "That design request can't be made. Try describing it differently." });
-    }
-    const text = response.content.filter((b) => b.type === "text").map((b) => b.text).join("");
-    const parsed = JSON.parse(text);
-    const svg = sanitizeSvg(parsed.svg);
-    if (!svg) throw new Error("No SVG in response");
-    res.json({ svg, note: clean(parsed.note, 300) });
-  } catch (err) {
-    console.error("design error:", err);
-    if (err instanceof Anthropic.RateLimitError) {
-      return res.status(503).json({ error: "The designer is busy. Try again in a minute." });
-    }
-    res.status(500).json({ error: "The designer hit a snag. Please try again." });
-  }
+app.get("/api/design/:id", (req, res) => {
+  const job = designJobs.get(req.params.id);
+  if (!job) return res.status(404).json({ error: "That design expired. Please create it again." });
+  if (job.status === "working") return res.json({ status: "working" });
+  designJobs.delete(req.params.id);
+  if (job.status === "error") return res.status(job.httpStatus).json({ error: job.error });
+  res.json({ status: "done", ...job.result });
 });
 
 // ---------- business card checkout ----------
