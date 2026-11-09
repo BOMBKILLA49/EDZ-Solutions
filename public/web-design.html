@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Web Design | EDZ Solutions</title>
+  <meta name="description" content="Custom business websites from EDZ Solutions: mobile-first, built for Google, with online stores, booking, payments and ad landing pages.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/png" href="/img/edz-icon.png">
+  <link rel="apple-touch-icon" href="/img/edz-icon.png">
+  <link rel="stylesheet" href="/css/site.css">
+</head>
+<body>
+  <section class="page-head">
+    <div class="wrap">
+      <div class="eyebrow" style="color:var(--accent)">Web design</div>
+      <h1>A website that actually brings in business</h1>
+      <p class="lead">We design, build, host and maintain websites for small businesses. You get a fast, professional site, and we handle the technical side.</p>
+      <a class="btn btn-primary" href="#start">Start your project</a>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap">
+      <div class="eyebrow">What's included</div>
+      <h2>Everything a business site needs</h2>
+      <div class="grid grid-3" style="margin-top:32px">
+        <div class="card"><div class="icon">&#128241;</div><h3>Mobile-first design</h3><p>Most of your customers are on a phone. Every site is built for phones first and looks sharp on desktop.</p></div>
+        <div class="card"><div class="icon">&#128269;</div><h3>Built for Google</h3><p>Clean code, fast load times, and local pages for every city you serve so customers find you.</p></div>
+        <div class="card"><div class="icon">&#128176;</div><h3>Payments &amp; stores</h3><p>Sell products, take deposits, or book services online with Stripe checkout.</p></div>
+        <div class="card"><div class="icon">&#128222;</div><h3>Calls &amp; leads</h3><p>Click-to-call, quote forms and call tracking so you know which ads bring in work.</p></div>
+        <div class="card"><div class="icon">&#128200;</div><h3>Google Ads pages</h3><p>Landing pages matched to your ads to raise conversions and lower cost per lead.</p></div>
+        <div class="card"><div class="icon">&#128295;</div><h3>Hosting &amp; updates</h3><p>Domain, hosting, SSL and email setup. Need a change? Just ask.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section soft">
+    <div class="wrap">
+      <div class="eyebrow">Portfolio</div>
+      <h2>Sites we've built</h2>
+      <div class="grid grid-3" style="margin-top:32px" data-portfolio></div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap">
+      <div class="eyebrow">Process</div>
+      <h2>How we work</h2>
+      <div class="grid grid-4 steps" style="margin-top:32px">
+        <div class="step"><h3>Talk</h3><p>A quick call about your business, customers and goals.</p></div>
+        <div class="step"><h3>Design</h3><p>We build a first version and send you a live preview link.</p></div>
+        <div class="step"><h3>Refine</h3><p>You review it, we make the changes until it's right.</p></div>
+        <div class="step"><h3>Launch</h3><p>We connect your domain, go live and keep it running.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section soft" id="start">
+    <div class="wrap split" style="align-items:start">
+      <div>
+        <div class="eyebrow">Start a project</div>
+        <h2>Tell us about your business</h2>
+        <p class="lead">Fill this out and we'll reach out within one business day with ideas and a quote.</p>
+      </div>
+      <form class="card" id="inquiry">
+        <div class="row">
+          <label>Your name<input name="name" required autocomplete="name"></label>
+          <label>Business name<input name="business" autocomplete="organization"></label>
+        </div>
+        <div class="row">
+          <label>Email<input name="email" type="email" autocomplete="email"></label>
+          <label>Phone<input name="phone" type="tel" autocomplete="tel"></label>
+        </div>
+        <div class="row">
+          <label>What do you need?
+            <select name="type">
+              <option>New website</option>
+              <option>Redesign my current site</option>
+              <option>Online store</option>
+              <option>Booking / web app</option>
+              <option>Google Ads landing pages</option>
+              <option>Something else</option>
+            </select>
+          </label>
+          <label>Budget
+            <select name="budget">
+              <option>Not sure yet</option>
+              <option>Under $1,000</option>
+              <option>$1,000 – $3,000</option>
+              <option>$3,000 – $7,500</option>
+              <option>$7,500+</option>
+            </select>
+          </label>
+        </div>
+        <label>Tell us about the project<textarea name="message" placeholder="What does your business do? Do you have a site now? Any sites you like?"></textarea></label>
+        <button class="btn btn-primary" type="submit">Send</button>
+        <div class="msg" role="status"></div>
+      </form>
+    </div>
+  </section>
+
+  <script src="/js/site.js"></script>
+  <script src="/js/portfolio.js"></script>
+  <script>
+    const form = document.getElementById("inquiry");
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const msg = form.querySelector(".msg");
+      const btn = form.querySelector("button");
+      btn.disabled = true;
+      try {
+        await postJSON("/api/inquiry", Object.fromEntries(new FormData(form)));
+        form.reset();
+        showMsg(msg, "Thanks! We'll be in touch within one business day.", true);
+      } catch (err) {
+        showMsg(msg, err.message, false);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

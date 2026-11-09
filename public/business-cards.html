@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Metal Business Cards | EDZ Solutions</title>
+  <meta name="description" content="Design a laser-engraved metal business card with AI or upload your own. Choose thickness, finish and quantity, then watch it made live on TikTok.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/png" href="/img/edz-icon.png">
+  <link rel="apple-touch-icon" href="/img/edz-icon.png">
+  <link rel="stylesheet" href="/css/site.css">
+</head>
+<body>
+  <section class="page-head" style="padding:52px 0 44px">
+    <div class="wrap">
+      <div class="eyebrow" style="color:var(--accent)">Metal business cards</div>
+      <h1>Design your card. Watch it engraved.</h1>
+      <p class="lead">Describe the look you want and our AI designer lays out your card, or upload artwork you already have. Then choose thickness, finish and quantity.</p>
+    </div>
+  </section>
+
+  <section class="section" style="padding-top:48px">
+    <div class="wrap designer">
+      <!-- left: controls -->
+      <div>
+        <div class="tabs" role="tablist">
+          <button type="button" class="active" data-tab="ai" role="tab">&#10024; Design with AI</button>
+          <button type="button" data-tab="upload" role="tab">&#8682; Upload my design</button>
+        </div>
+
+        <div class="panel active" data-panel="ai">
+          <h3>1. Your details</h3>
+          <form id="details">
+            <div class="row">
+              <label>Name<input name="name" autocomplete="name" placeholder="Jordan Reyes"></label>
+              <label>Title<input name="title" autocomplete="organization-title" placeholder="Owner"></label>
+            </div>
+            <div class="row">
+              <label>Company<input name="company" autocomplete="organization" placeholder="Reyes Construction"></label>
+              <label>Tagline <span class="hint">(optional)</span><input name="tagline" placeholder="Built right the first time"></label>
+            </div>
+            <div class="row">
+              <label>Phone<input name="phone" type="tel" autocomplete="tel" placeholder="(505) 555-0123"></label>
+              <label>Email<input name="email" type="email" autocomplete="email" placeholder="jordan@reyesbuilds.com"></label>
+            </div>
+            <label>Website<input name="website" placeholder="reyesbuilds.com"></label>
+          </form>
+
+          <h3 style="margin-top:10px">2. Describe your style</h3>
+          <label class="sr-only" for="style">Style</label>
+          <textarea id="style" placeholder="Bold and modern with a thin border, company name large across the top, contact info with small icons at the bottom..."></textarea>
+          <div class="tags" id="style-chips" style="margin:10px 0 18px">
+            <button type="button" class="tag" style="cursor:pointer">Minimal &amp; clean</button>
+            <button type="button" class="tag" style="cursor:pointer">Bold &amp; industrial</button>
+            <button type="button" class="tag" style="cursor:pointer">Luxury with a fine border</button>
+            <button type="button" class="tag" style="cursor:pointer">Monogram logo on the left</button>
+            <button type="button" class="tag" style="cursor:pointer">Western / rustic</button>
+          </div>
+          <button type="button" class="btn btn-dark" id="generate">&#10024; Create my design</button>
+          <div class="msg" id="ai-msg" role="status"></div>
+
+          <div class="revise" id="revise">
+            <label>Want changes? Tell the designer what to fix
+              <input id="revision" placeholder="Make the name bigger and move the icons to the right">
+            </label>
+            <div class="btn-row">
+              <button type="button" class="btn btn-outline" id="apply-revision">Update design</button>
+              <button type="button" class="btn btn-outline" id="new-design">Try a new layout</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel" data-panel="upload">
+          <h3>Upload your artwork</h3>
+          <p class="hint" style="font-size:.95rem">PNG, JPG, SVG or PDF, up to 5 MB. Black-and-white artwork or a vector file (SVG/PDF) engraves best. We'll check it and contact you if anything needs adjusting before we engrave.</p>
+          <label class="dropzone" id="dropzone">
+            <input type="file" id="file" accept=".png,.jpg,.jpeg,.svg,.pdf" class="sr-only">
+            <strong>Click to choose a file</strong><br>or drag it here
+            <div id="file-name" style="margin-top:8px"></div>
+          </label>
+          <label style="margin-top:16px">Name on the card <span class="hint">(so we can match your order)</span>
+            <input id="upload-name" placeholder="Jordan Reyes">
+          </label>
+        </div>
+
+        <hr style="border:0;border-top:1px solid var(--line);margin:30px 0">
+
+        <h3>3. Choose your card</h3>
+        <div class="opt-group">
+          <span class="opt-title">Thickness</span>
+          <div class="opts" id="opt-thickness"></div>
+        </div>
+        <div class="opt-group">
+          <span class="opt-title">Finish</span>
+          <div class="opts" id="opt-finish"></div>
+        </div>
+        <div class="opt-group">
+          <span class="opt-title">Quantity</span>
+          <div class="opts" id="opt-qty"></div>
+        </div>
+
+        <h3>4. Watch it live <span class="hint">(optional)</span></h3>
+        <label class="check"><input type="checkbox" id="watch-live" checked> Engrave my cards on TikTok Live and give me a shout-out</label>
+        <label>Your TikTok handle <span class="hint">(optional)</span><input id="tiktok" placeholder="@yourhandle"></label>
+        <label>Notes for us <span class="hint">(optional)</span><textarea id="notes" style="min-height:80px" placeholder="Anything we should know?"></textarea></label>
+
+        <div class="total-bar">
+          <div>
+            <div class="amount" id="total">$—</div>
+            <div class="each" id="each">Choose your options</div>
+          </div>
+          <button type="button" class="btn btn-primary" id="checkout">Order &amp; pay securely</button>
+        </div>
+        <div class="msg" id="checkout-msg" role="status"></div>
+        <p class="hint" style="margin-top:12px">Shipping address is collected at checkout. Cards ship within 5–7 business days of your order.</p>
+      </div>
+
+      <!-- right: preview -->
+      <div class="preview-pane">
+        <div class="metal-card" id="card" data-finish="silver">
+          <div class="placeholder" id="placeholder">Your design appears here</div>
+        </div>
+        <div class="preview-note" id="preview-note">Preview is a simulation. Actual engraving color varies slightly by metal.</div>
+        <div class="card" style="margin-top:20px">
+          <h3 style="font-size:1rem">Good to know</h3>
+          <ul style="margin:0;padding-left:18px;color:var(--muted);font-size:.93rem">
+            <li>Standard 3.5 × 2 in card size, one engraved side.</li>
+            <li>Every detail is engraved exactly as you typed it, so double-check spelling.</li>
+            <li>We review every design before engraving and will reach out if something won't engrave cleanly.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <script src="/js/site.js"></script>
+  <script src="/js/card-designer.js"></script>
+</body>
+</html>

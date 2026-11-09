@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Order Received | EDZ Solutions</title>
+  <meta name="robots" content="noindex">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/png" href="/img/edz-icon.png">
+  <link rel="apple-touch-icon" href="/img/edz-icon.png">
+  <link rel="stylesheet" href="/css/site.css">
+</head>
+<body>
+  <section class="section">
+    <div class="wrap" style="max-width:720px;text-align:center">
+      <div class="icon" style="margin:0 auto 18px;width:64px;height:64px;font-size:2rem">&#10003;</div>
+      <h1>Thanks! Your order is in.</h1>
+      <p class="lead" style="margin:0 auto 26px">You'll get a receipt by email. We'll review your design and reach out if anything needs a tweak before it goes on the laser. If you asked to watch live, follow us so you don't miss your cards being made.</p>
+      <div class="btn-row" style="justify-content:center">
+        <a class="btn btn-primary" data-tiktok href="#" target="_blank" rel="noopener">Follow on TikTok</a>
+        <a class="btn btn-outline" href="/live">See the live schedule</a>
+      </div>
+    </div>
+  </section>
+  <script src="/js/site.js"></script>
+  <script>
+    // Confirms the payment with Stripe so the order is recorded right away.
+    const sid = new URLSearchParams(location.search).get("session_id");
+    if (sid) fetch("/api/order-status?session_id=" + encodeURIComponent(sid)).catch(() => {});
+  </script>
+</body>
+</html>

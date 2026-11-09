@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Orders | EDZ Solutions</title>
+  <meta name="robots" content="noindex">
+  <link rel="icon" type="image/png" href="/img/edz-icon.png">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/site.css">
+  <style>
+    body { background: var(--bg-soft); }
+    .bar { background: var(--ink); color: #fff; padding: 16px 0; position: sticky; top: 0; z-index: 5; }
+    .bar .wrap { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .filters { display: flex; gap: 6px; flex-wrap: wrap; }
+    .filters button { border: 1px solid #334155; background: transparent; color: #cbd5e1; padding: 7px 12px; border-radius: 99px; font: inherit; font-size: .9rem; font-weight: 600; cursor: pointer; }
+    .filters button.active { background: var(--accent); border-color: var(--accent); color: var(--ink); }
+    .filters .count { opacity: .7; margin-left: 4px; }
+    .order { display: grid; grid-template-columns: 300px 1fr; gap: 22px; margin-bottom: 18px; }
+    @media (max-width: 760px) { .order { grid-template-columns: 1fr; } }
+    .order .metal-card { box-shadow: 0 8px 20px rgba(15,23,42,.18); }
+    .order .file-box { aspect-ratio: 3.5 / 2; border: 2px dashed var(--line); border-radius: 12px; display: grid; place-items: center; text-align: center; color: var(--muted); padding: 12px; font-size: .9rem; }
+    .order h3 { margin-bottom: 4px; }
+    .meta { color: var(--muted); font-size: .9rem; }
+    .pill { display: inline-block; padding: 3px 10px; border-radius: 99px; font-size: .75rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+    .pill.paid { background: #fef3c7; color: #92400e; }
+    .pill.engraved { background: #dbeafe; color: #1e40af; }
+    .pill.shipped { background: #dcfce7; color: #166534; }
+    .pill.live { background: #ef4444; color: #fff; }
+    .kv { display: grid; grid-template-columns: 110px 1fr; gap: 4px 12px; font-size: .93rem; margin: 12px 0 16px; }
+    .kv dt { color: var(--muted); }
+    .kv dd { margin: 0; white-space: pre-line; }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .actions .btn { padding: 9px 14px; font-size: .9rem; }
+    .empty { text-align: center; color: var(--muted); padding: 60px 0; }
+    .inq { font-size: .93rem; }
+  </style>
+</head>
+<body>
+  <div class="bar">
+    <div class="wrap">
+      <strong>EDZ Orders</strong>
+      <div class="filters" id="filters"></div>
+      <button class="btn btn-ghost" id="refresh" style="padding:7px 14px">Refresh</button>
+    </div>
+  </div>
+
+  <main class="wrap" style="padding-top:28px;padding-bottom:60px">
+    <div id="list"></div>
+    <h2 style="margin-top:40px">Website inquiries</h2>
+    <div id="inquiries"></div>
+  </main>
+
+  <script>
+    const FILTERS = [
+      ["paid", "To engrave"],
+      ["live", "Live queue"],
+      ["engraved", "Ready to ship"],
+      ["shipped", "Shipped"],
+      ["all", "All"],
+    ];
+    let data = { orders: [], inquiries: [], finishes: {} };
+    let filter = "paid";
+    const esc = (v) => String(v ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+    const money = (c) => `$${(c / 100).toFixed(2)}`;
+    const when = (t) => (t ? new Date(t).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "");
+    const ENGRAVE = { silver: "#3b3f45", black: "#d9dcdf", gold: "#5a4410" };
+
+    function matches(o, f) {
+      if (f === "all") return true;
+      if (f === "live") return o.status === "paid" && o.watch_live;
+      return o.status === f;
+    }
+
+    function renderFilters() {
+      document.getElementById("filters").innerHTML = FILTERS.map(([id, label]) => {
+        const n = data.orders.filter((o) => matches(o, id)).length;
+        return `<button data-f="${id}" class="${id === filter ? "active" : ""}">${label}<span class="count">${n}</span></button>`;
+      }).join("");
+    }
+
+    function preview(o) {
+      if (o.design_type === "ai" && o.svg) {
+        const tinted = o.svg.replace(/#000000|#000\b/gi, ENGRAVE[o.finish] || "#333");
+        return `<div class="metal-card" data-finish="${esc(o.finish)}"><img class="engrave" alt="Design" src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(tinted)}"></div>`;
+      }
+      return `<div class="file-box">Customer upload<br><strong>${esc(o.upload_name)}</strong></div>`;
+    }
+
+    function renderOrders() {
+      const list = data.orders.filter((o) => matches(o, filter));
+      // Oldest first so the queue runs in order.
+      if (filter !== "all" && filter !== "shipped") list.sort((a, b) => new Date(a.paid_at) - new Date(b.paid_at));
+      if (!list.length) {
+        document.getElementById("list").innerHTML = `<div class="empty">Nothing here right now.</div>`;
+        return;
+      }
+      document.getElementById("list").innerHTML = list.map((o) => {
+        const d = o.details || {};
+        const a = o.shipping && o.shipping.address;
+        const ship = a ? [o.shipping.name, a.line1, a.line2, `${a.city}, ${a.state} ${a.postal_code}`].filter(Boolean).join("\n") : "—";
+        const next = o.status === "paid" ? ["engraved", "Mark engraved"] : o.status === "engraved" ? ["shipped", "Mark shipped"] : null;
+        return `<div class="card order">
+          <div>${preview(o)}</div>
+          <div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+              <span class="pill ${o.status}">${o.status === "paid" ? "To engrave" : o.status}</span>
+              ${o.watch_live ? `<span class="pill live">Live${o.tiktok ? " · " + esc(o.tiktok) : ""}</span>` : ""}
+              <span class="meta">Paid ${when(o.paid_at)}</span>
+            </div>
+            <h3>${esc(o.customer_name || d.name || "Customer")} — ${money(o.total_cents)}</h3>
+            <div class="meta">${o.qty} cards · ${esc(o.thickness)} mm · ${esc(data.finishes[o.finish] || o.finish)}</div>
+            <dl class="kv">
+              <dt>Card text</dt><dd>${esc([d.name, d.title, d.company, d.phone, d.email, d.website, d.tagline].filter(Boolean).join(" · ") || "—")}</dd>
+              <dt>Contact</dt><dd>${esc([o.customer_email, o.customer_phone].filter(Boolean).join(" · "))}</dd>
+              <dt>Ship to</dt><dd>${esc(ship)}</dd>
+              ${o.notes ? `<dt>Notes</dt><dd>${esc(o.notes)}</dd>` : ""}
+            </dl>
+            <div class="actions">
+              <a class="btn btn-dark" href="/api/admin/orders/${o.id}/design">Download design</a>
+              ${next ? `<button class="btn btn-primary" data-id="${o.id}" data-status="${next[0]}">${next[1]}</button>` : ""}
+              ${o.status !== "paid" ? `<button class="btn btn-outline" data-id="${o.id}" data-status="${o.status === "shipped" ? "engraved" : "paid"}">Undo</button>` : ""}
+            </div>
+          </div>
+        </div>`;
+      }).join("");
+    }
+
+    function renderInquiries() {
+      document.getElementById("inquiries").innerHTML = data.inquiries.length
+        ? data.inquiries.map(({ created_at, data: q }) => `<div class="card inq" style="margin-bottom:12px">
+            <strong>${esc(q.name)}</strong>${q.business ? ` · ${esc(q.business)}` : ""} <span class="meta">· ${when(created_at)}</span><br>
+            <span class="meta">${esc([q.email, q.phone, q.type, q.budget].filter(Boolean).join(" · "))}</span>
+            ${q.message ? `<p style="margin:8px 0 0;white-space:pre-line">${esc(q.message)}</p>` : ""}
+          </div>`).join("")
+        : `<div class="empty" style="padding:20px 0">No inquiries yet.</div>`;
+    }
+
+    async function load() {
+      const res = await fetch("/api/admin/orders");
+      data = await res.json();
+      renderFilters();
+      renderOrders();
+      renderInquiries();
+    }
+
+    document.getElementById("filters").addEventListener("click", (e) => {
+      const b = e.target.closest("button[data-f]");
+      if (!b) return;
+      filter = b.dataset.f;
+      renderFilters();
+      renderOrders();
+    });
+    document.getElementById("list").addEventListener("click", async (e) => {
+      const b = e.target.closest("button[data-status]");
+      if (!b) return;
+      b.disabled = true;
+      await fetch(`/api/admin/orders/${b.dataset.id}/status`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: b.dataset.status }),
+      });
+      load();
+    });
+    document.getElementById("refresh").addEventListener("click", load);
+    load();
+    setInterval(load, 60000);
+  </script>
+</body>
+</html>
