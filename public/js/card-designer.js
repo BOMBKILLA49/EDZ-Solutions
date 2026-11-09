@@ -6,7 +6,7 @@
     designId: null, // AI design saved on the server
     upload: null, // { name, dataUrl, mime }
     thickness: "0.5",
-    finish: "silver",
+    finish: "mirror",
     qty: 50,
   };
   const money = (cents) => `$${(cents / 100).toFixed(2)}`;
