@@ -162,11 +162,13 @@ textarea { min-height: 110px; resize: vertical; }
 @media (max-width: 960px) { .designer { grid-template-columns: 1fr; } }
 .preview-pane { position: sticky; top: 90px; }
 @media (max-width: 960px) { .preview-pane { position: static; } }
-.metal-card { aspect-ratio: 3.5 / 2; border-radius: 16px; position: relative; overflow: hidden; box-shadow: 0 24px 50px rgba(15,23,42,.28), inset 0 1px 0 rgba(255,255,255,.35); transition: background .3s; }
+.metal-card { aspect-ratio: 3.375 / 2.125; border-radius: 4% / 6.3%; position: relative; overflow: hidden; box-shadow: 0 24px 50px rgba(15,23,42,.28), inset 0 1px 0 rgba(255,255,255,.35); transition: background .3s; }
 /* Polished stainless: no grain, just soft reflections of the room. */
 .metal-card[data-finish="mirror"] { background: linear-gradient(112deg, #9a9ea4 0%, #eceef0 16%, #b9bdc2 30%, #f7f8f9 44%, #c3c6cb 58%, #8f9399 74%, #dfe2e5 90%, #aeb2b7 100%); }
 .metal-card[data-finish="mirror"]::before { content: ""; position: absolute; inset: 0; background: linear-gradient(200deg, rgba(255,255,255,.55) 0%, transparent 35%), linear-gradient(20deg, rgba(120,95,70,.12) 0%, transparent 45%); pointer-events: none; }
-.metal-card[data-finish="black"] { background: radial-gradient(120% 140% at 20% 0%, #1c1d20, #0b0b0c 70%); }
+/* Gloss black: deep black with a soft diagonal reflection across the lacquer. */
+.metal-card[data-finish="black"] { background: linear-gradient(118deg, #060607 0%, #141517 26%, #2a2b2f 34%, #101113 42%, #060607 64%, #18191c 100%); }
+.metal-card[data-finish="black"]::before { content: ""; position: absolute; inset: 0; background: linear-gradient(160deg, rgba(255,255,255,.14) 0%, transparent 28%), linear-gradient(118deg, transparent 30%, rgba(255,255,255,.07) 34%, transparent 40%); pointer-events: none; }
 .metal-card[data-finish="gold"] { background: repeating-linear-gradient(90deg, rgba(255,255,255,.12) 0 1px, transparent 1px 3px), linear-gradient(135deg, #f3d77a, #c9a227 45%, #e8c65a 70%, #b48a17); }
 .metal-card .engrave { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 .metal-card .placeholder[hidden] { display: none; }
@@ -189,8 +191,8 @@ textarea { min-height: 110px; resize: vertical; }
 .opts { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
 .opt { position: relative; }
 .opt input { position: absolute; opacity: 0; pointer-events: none; }
-.opt span { display: block; border: 2px solid var(--line); border-radius: 11px; padding: 12px 14px; cursor: pointer; font-weight: 600; font-size: .95rem; color: var(--ink); background: #fff; height: 100%; }
-.opt span small { display: block; font-weight: 400; color: var(--muted); font-size: .8rem; margin-top: 2px; }
+.opt > span { display: block; border: 2px solid var(--line); border-radius: 11px; padding: 12px 14px; cursor: pointer; font-weight: 600; font-size: .95rem; color: var(--ink); background: #fff; height: 100%; }
+.opt > span small { display: block; font-weight: 400; color: var(--muted); font-size: .8rem; margin-top: 2px; }
 .opt input:checked + span { border-color: var(--accent); background: #fffbeb; }
 .opt input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
 .swatch { display: inline-block; width: 14px; height: 14px; border-radius: 50%; vertical-align: -2px; margin-right: 6px; border: 1px solid rgba(0,0,0,.2); }
@@ -200,6 +202,15 @@ textarea { min-height: 110px; resize: vertical; }
 .side-tabs button.active { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(15,23,42,.12); }
 .back-opts { margin-bottom: 18px; }
 #back-ai-fields, #back-upload-fields { margin-bottom: 8px; }
+.designer h4.sub { font-size: 1rem; color: var(--ink); margin: 0 0 10px; }
+.opt .rec { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 99px; background: var(--accent); color: var(--ink); font-size: .68rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; vertical-align: 2px; }
+/* Phone-sized previews right under each design button; desktop uses the side preview. */
+.mini-preview, .mini-note { display: none !important; }
+@media (max-width: 960px) {
+  .mini-preview:not([hidden]) { display: block !important; margin: 16px 0 8px; }
+  .mini-note:not([hidden]) { display: block !important; margin: 0 0 12px; }
+  .preview-pane .side-tabs, .preview-pane #card, .preview-pane #preview-note { display: none; }
+}
 .promo-row { display: flex; gap: 10px; margin: 6px 0 12px; }
 .promo-row input { margin-top: 0; text-transform: uppercase; }
 .promo-row .btn { padding: 11px 18px; }

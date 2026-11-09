@@ -44,8 +44,8 @@ function zoneFor(dest) {
   return "world";
 }
 
-// Stainless steel, 3.5 x 2 in card: 45.16 cm² × thickness × 7.9 g/cm³, plus box and padding.
-const CARD_AREA_CM2 = 45.16;
+// Stainless steel, 85.6 x 54 mm card: 46.21 cm² × thickness × 7.9 g/cm³, plus box and padding.
+const CARD_AREA_CM2 = 46.21;
 const STEEL_G_PER_CM3 = 7.9;
 const PACKAGING_G = 150;
 

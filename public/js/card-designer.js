@@ -6,7 +6,8 @@
     designId: null, // AI design saved on the server
     upload: null, // { name, dataUrl, mime }
     thickness: "0.5",
-    finish: "mirror",
+    finish: "black",
+    busy: { front: false, back: false }, // a design is being made for this side
     qty: 50,
     promo: "",
     dest: "US",
@@ -46,7 +47,7 @@
       (t) => ({ value: t.id, html: `${t.label}<small>${t.note} · $${t.perCard.toFixed(2)}/card</small>` }),
       (v) => { state.thickness = v; updatePrice(); });
     radios($("#opt-finish"), "finish", c.finish, state.finish,
-      (f) => ({ value: f.id, html: `<span class="swatch" style="background:${f.swatch}"></span>${f.label}<small>${f.upcharge ? `+$${f.upcharge.toFixed(2)}/card` : "Included"}</small>` }),
+      (f) => ({ value: f.id, html: `<span class="swatch" style="background:${f.swatch}"></span>${f.label}${f.recommended ? '<span class="rec">Recommended</span>' : ""}<small>${f.upcharge ? `+$${f.upcharge.toFixed(2)}/card` : "Included"}</small>` }),
       (v) => { state.finish = v; renderPreview(); updatePrice(); });
     radios($("#opt-qty"), "qty", c.quantity, state.qty,
       (q) => ({ value: q.qty, html: `${q.qty} cards<small>${q.discount ? `Save ${Math.round(q.discount * 100)}%` : "&nbsp;"}</small>` }),
@@ -258,19 +259,41 @@
     return { text: "Your design appears here" };
   }
 
-  function renderPreview() {
-    card.dataset.finish = state.finish;
-    card.querySelectorAll(".engrave, .upload-img").forEach((el) => el.remove());
-    document.querySelectorAll("[data-side]").forEach((t) => t.classList.toggle("active", t.dataset.side === state.view));
-    const v = state.view === "back" ? backView() : frontView();
-    const placeholder = $("#placeholder");
+  // Draws one side ({src} or {text}) into a card element.
+  function paintCard(el, v, label) {
+    el.dataset.finish = state.finish;
+    el.querySelectorAll(".engrave, .upload-img").forEach((c) => c.remove());
+    const placeholder = el.querySelector(".placeholder");
     if (v.src) {
-      card.append(engravedImage(v.src, `Card ${state.view} preview`, v.cls));
+      el.append(engravedImage(v.src, label, v.cls));
       placeholder.hidden = true;
     } else {
       placeholder.hidden = false;
       placeholder.textContent = v.text;
     }
+  }
+
+  function renderPreview() {
+    document.querySelectorAll("[data-side]").forEach((t) => t.classList.toggle("active", t.dataset.side === state.view));
+    const front = frontView();
+    const back = backView();
+    const v = state.view === "back" ? back : front;
+    paintCard(card, v, `Card ${state.view} preview`);
+
+    // Phone previews under the buttons: shown once there's something to show (or it's being made).
+    const b = state.back.mode;
+    const show = {
+      "front-mini-ai": state.mode === "ai" && (state.busy.front || Boolean(state.designId)),
+      "front-mini-upload": state.mode === "upload" && Boolean(state.upload),
+      "back-mini-ai": b === "ai" && (state.busy.back || Boolean(state.back.designId)),
+      "back-mini-other": b === "qr" || b === "upload",
+    };
+    document.querySelectorAll(".mini-preview").forEach((el) => {
+      el.hidden = !show[el.id];
+      if (!el.hidden) paintCard(el, el.dataset.mini === "back" ? back : front, `Card ${el.dataset.mini} preview`);
+    });
+    $("#front-mini-note").hidden = !state.designId;
+
     if (state.view === "back") {
       $("#preview-note").textContent = v.note || "The preview shows your design engraved on the metal you pick.";
     } else if (state.mode === "ai" && state.designId) {
@@ -319,8 +342,13 @@
     const label = btn.textContent;
     btn.textContent = "Designing… (about 15–45 seconds)";
     state.view = side;
+    state.busy[side] = true;
     renderPreview();
-    card.classList.add("loading");
+    const loaders = [card, ...document.querySelectorAll(`.mini-preview[data-mini="${side}"]`)];
+    loaders.forEach((el) => el.classList.add("loading"));
+    // On phones, bring the preview under the button into view.
+    const mini = document.getElementById(side === "back" ? "back-mini-ai" : "front-mini-ai");
+    if (window.matchMedia("(max-width: 960px)").matches) mini.scrollIntoView({ behavior: "smooth", block: "center" });
     try {
       const out = await waitForDesign({ ...body, side });
       if (side === "back") {
@@ -334,7 +362,9 @@
     } catch (err) {
       showMsg(msg, err.message, false);
     } finally {
-      card.classList.remove("loading");
+      state.busy[side] = false;
+      loaders.forEach((el) => el.classList.remove("loading"));
+      renderPreview();
       btn.textContent = label;
       buttons.forEach((b) => (b.disabled = false));
     }

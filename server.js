@@ -155,8 +155,8 @@ app.post("/api/price", async (req, res) => {
 // ---------- AI business card designer (OpenAI image model) ----------
 
 const IMAGE_MODEL = "gpt-image-2.6-flare";
-const CARD_SIZE = "1792x1024"; // 1.75:1, the exact shape of a 3.5 x 2 in card
-const CARD_DPI = cardback.DPI; // 1792 px / 3.5 in
+const CARD_SIZE = `${cardback.W}x${cardback.H}`; // exact shape of a 3.375 x 2.125 in card
+const CARD_DPI = cardback.DPI; // 1728 px / 3.375 in
 
 // Dark pixels are what the laser engraves, so art is always dark on a light background.
 const ENGRAVING_RULES = `Plain white or very light background. Draw the design in black and dark gray only, in a detailed engraved style. No color.`;
@@ -167,7 +167,7 @@ function designPrompt(details, style) {
     .filter(([k]) => details[k])
     .map(([k, label]) => `${label}: ${details[k]}`)
     .join("\n");
-  return `Design the FRONT of a horizontal 3.5 x 2 inch business card that will be laser engraved on a metal card.
+  return `Design the FRONT of a horizontal 3.375 x 2.125 inch (credit-card size) business card that will be laser engraved on a metal card.
 
 Fill the entire image edge to edge with the flat card design, viewed straight on. No mockup, no hands, no table, no shadows, no perspective, no card shape sitting on a background.
 ${ENGRAVING_RULES}
@@ -312,7 +312,7 @@ async function buildBack({ designId, url, finish, company, caption }) {
 app.get("/api/back-image", async (req, res) => {
   const url = normalizeUrl(req.query.url);
   if (!url) return res.status(400).end();
-  const finish = catalog.cardFinish.some((f) => f.id === req.query.finish) ? req.query.finish : "mirror";
+  const finish = catalog.cardFinish.some((f) => f.id === req.query.finish) ? req.query.finish : "black";
   const image = await buildBack({
     designId: req.query.design || null,
     url,
@@ -496,7 +496,7 @@ async function sendOrderAlert(o) {
     o.promo_code ? `Promo: ${o.promo_code} (saved $${(o.discount_cents / 100).toFixed(2)})` : null,
     `Front: ${o.design_type === "ai" ? "AI design" : `customer upload (${o.upload_name})`}`,
     `Back: ${BACK_LABEL[o.back_mode] || "blank"}${o.qr_url ? ` — QR goes to ${o.qr_url}` : ""}`,
-    `Files attached are 3.5 x 2 in at 512 DPI. The dark parts of each file are what gets engraved.`,
+    `Files attached are 3.375 x 2.125 in (credit-card size) at 512 DPI. The dark parts of each file are what gets engraved.`,
     `Watch live: ${o.watch_live ? `YES${o.tiktok ? ` — ${o.tiktok}` : ""}` : "no"}`,
     o.notes ? `Notes: ${o.notes}` : null,
     ``,
