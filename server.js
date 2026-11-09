@@ -408,11 +408,11 @@ app.post("/api/checkout", async (req, res) => {
           shipping_rate_data: {
             type: "fixed_amount",
             fixed_amount: { amount: ship.cents, currency: "usd" },
-            display_name: dest === "US-HI" ? "Hawaii shipping" : ship.label,
+            display_name: shipping.US_STATES_BY_WEIGHT[dest] ? `${shipping.US_STATES_BY_WEIGHT[dest].name} shipping` : ship.label,
           },
         },
       ],
-      ...(ship.zone !== "us" && dest !== "US-HI" && dest !== "PR"
+      ...(!shipping.isDomestic(dest)
         ? { custom_text: { shipping_address: { message: "International orders may owe import duties or taxes when they arrive. These are paid by the recipient." } } }
         : {}),
       phone_number_collection: { enabled: true },
@@ -447,14 +447,17 @@ async function markPaid(sessionId) {
   if (session.payment_status !== "paid") return null;
   const cust = session.customer_details || {};
   const ship = session.collected_information?.shipping_details || session.shipping_details || null;
-  // Hawaii is part of the US at Stripe, so a mainland rate with a Hawaii address can
-  // slip through. Flag it so the difference can be collected before shipping.
+  // Alaska and Hawaii are part of the US at Stripe, so a mainland rate with an Alaska or
+  // Hawaii address can slip through. Flag it so the difference can be collected first.
   const { rows: pending } = await pool.query("SELECT ship_dest FROM orders WHERE stripe_session=$1", [sessionId]);
   const state = ship?.address?.state;
   const dest = pending[0]?.ship_dest;
   let flag = null;
-  if (dest === "US" && state === "HI") flag = "Hawaii address, but paid mainland US shipping. Collect the difference before shipping.";
-  if (dest === "US-HI" && state && state !== "HI") flag = `Paid Hawaii shipping, but the address is in ${state}.`;
+  const weighted = Object.values(shipping.US_STATES_BY_WEIGHT);
+  const addrState = weighted.find((w) => w.state === state);
+  const paidState = shipping.US_STATES_BY_WEIGHT[dest];
+  if (dest === "US" && addrState) flag = `${addrState.name} address, but paid mainland US shipping. Collect the difference before shipping.`;
+  if (paidState && state && state !== paidState.state) flag = `Paid ${paidState.name} shipping, but the address is in ${state}.`;
   const { rows } = await pool.query(
     `UPDATE orders SET status='paid', paid_at=now(), customer_email=$2, customer_name=$3, customer_phone=$4, shipping=$5, ship_flag=$6
      WHERE stripe_session=$1 AND status='pending_payment' RETURNING *`,

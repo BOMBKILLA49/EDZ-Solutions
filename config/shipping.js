@@ -1,4 +1,4 @@
-// Shipping rates. International and Hawaii/Puerto Rico rates are PLACEHOLDERS — set your real prices here.
+// Shipping rates. International and Alaska/Hawaii/Puerto Rico rates are PLACEHOLDERS — set your real prices here.
 // All amounts are in cents. Weight tiers are the package's maximum weight in pounds.
 
 const US_FLAT_CENTS = 800; // $8 under the free-shipping threshold
@@ -6,7 +6,7 @@ const US_FREE_OVER_CENTS = 10000; // free US shipping when the cards total $100 
 
 // Rates by package weight: [max pounds, cents]. Orders heavier than the last tier use the last tier.
 const ZONES = {
-  hipr: { label: "Hawaii & Puerto Rico", tiers: [[1, 1200], [2, 1600], [4, 2400], [8, 3500], [12, 4500]] },
+  hipr: { label: "Alaska, Hawaii & Puerto Rico", tiers: [[1, 1200], [2, 1600], [4, 2400], [8, 3500], [12, 4500]] },
   na: { label: "Canada & Mexico", tiers: [[1, 2500], [2, 3500], [4, 5000], [8, 7500], [12, 9500]] },
   eu: { label: "UK & Europe", tiers: [[1, 3000], [2, 4200], [4, 6000], [8, 9500], [12, 12000]] },
   oc: { label: "Australia & New Zealand", tiers: [[1, 3200], [2, 4500], [4, 6500], [8, 10000], [12, 13000]] },
@@ -28,12 +28,16 @@ const ALL = `AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA BB BD BE BF BG B
 
 const INTERNATIONAL = ALL.filter((c) => !["US", "PR"].includes(c) && !EXCLUDED.includes(c) && !STRIPE_UNSUPPORTED.includes(c));
 
-// "Ship to" choices: US, Hawaii (a US state, so it has its own choice), Puerto Rico, then countries.
-const DESTINATIONS = ["US", "US-HI", "PR", ...INTERNATIONAL];
+// Alaska and Hawaii are US states priced by weight, so each gets its own "Ship to"
+// choice; Stripe still sees them as the US.
+const US_STATES_BY_WEIGHT = { "US-AK": { state: "AK", name: "Alaska" }, "US-HI": { state: "HI", name: "Hawaii" } };
+
+// "Ship to" choices: mainland US, Alaska, Hawaii, Puerto Rico, then countries.
+const DESTINATIONS = ["US", "US-AK", "US-HI", "PR", ...INTERNATIONAL];
 
 function zoneFor(dest) {
   if (dest === "US") return "us";
-  if (dest === "US-HI" || dest === "PR") return "hipr";
+  if (US_STATES_BY_WEIGHT[dest] || dest === "PR") return "hipr";
   if (NA.includes(dest)) return "na";
   if (EU.includes(dest)) return "eu";
   if (OC.includes(dest)) return "oc";
@@ -54,7 +58,7 @@ function packageWeightLb(thicknessMm, qty) {
 function quoteShipping({ dest, thickness, qty, cardsTotalCents, waive }) {
   if (!DESTINATIONS.includes(dest)) return null;
   const zone = zoneFor(dest);
-  const country = dest === "US-HI" ? "US" : dest;
+  const country = US_STATES_BY_WEIGHT[dest] ? "US" : dest;
   if (waive) return { cents: 0, label: "Shipping included", zone, country };
   if (zone === "us") {
     const free = cardsTotalCents >= US_FREE_OVER_CENTS;
@@ -66,4 +70,7 @@ function quoteShipping({ dest, thickness, qty, cardsTotalCents, waive }) {
   return { cents: tier[1], label: `${ZONES[zone].label} shipping`, zone, country, weightLb: Math.round(lb * 10) / 10 };
 }
 
-module.exports = { DESTINATIONS, quoteShipping, US_FREE_OVER_CENTS };
+// Ship-to choices inside the US (not international).
+const isDomestic = (dest) => dest === "US" || dest === "PR" || Boolean(US_STATES_BY_WEIGHT[dest]);
+
+module.exports = { DESTINATIONS, US_STATES_BY_WEIGHT, isDomestic, quoteShipping, US_FREE_OVER_CENTS };

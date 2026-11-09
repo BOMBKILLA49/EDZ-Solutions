@@ -54,11 +54,12 @@
 
     // Ship-to list: US first, then Hawaii and Puerto Rico, then every other country by name.
     const names = new Intl.DisplayNames(["en"], { type: "region" });
-    const label = (d) => (d === "US-HI" ? "Hawaii (United States)" : names.of(d));
-    const [us, hi, pr, ...rest] = c.destinations;
-    rest.sort((a, b) => label(a).localeCompare(label(b)));
+    const STATES = { "US-AK": "Alaska (United States)", "US-HI": "Hawaii (United States)" };
+    const label = (d) => STATES[d] || names.of(d);
+    const domestic = c.destinations.slice(0, 4); // US, Alaska, Hawaii, Puerto Rico
+    const rest = c.destinations.slice(4).sort((a, b) => label(a).localeCompare(label(b)));
     $("#ship-to").innerHTML =
-      [us, hi, pr].map((d) => `<option value="${d}">${label(d)}</option>`).join("") +
+      domestic.map((d) => `<option value="${d}">${label(d)}</option>`).join("") +
       `<option disabled>──────────</option>` +
       rest.map((d) => `<option value="${d}">${label(d)}</option>`).join("");
     $("#ship-to").addEventListener("change", (e) => {
@@ -88,7 +89,7 @@
         const short = ship.freeOverCents - p.totalCents;
         note.textContent = ship.cents === 0 ? "Free US shipping." : `US shipping ${money(ship.cents)}. Add ${money(short)} more for free shipping.`;
       } else {
-        const intl = state.dest !== "US-HI" && state.dest !== "PR";
+        const intl = !["US-AK", "US-HI", "PR"].includes(state.dest);
         note.textContent = `${ship.label}: ${money(ship.cents)}${ship.weightLb ? ` (package about ${ship.weightLb} lb)` : ""}.${intl ? " Import duties or taxes may be due on delivery." : ""}`;
       }
       const shipText = ship ? (ship.cents ? ` + ${money(ship.cents)} shipping` : " · free shipping") : "";

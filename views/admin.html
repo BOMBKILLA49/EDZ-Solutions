@@ -147,7 +147,7 @@
               <dt>Card text</dt><dd>${esc([d.name, d.title, d.company, d.phone, d.email, d.website, d.tagline].filter(Boolean).join(" · ") || "—")}</dd>
               <dt>Contact</dt><dd>${esc([o.customer_email, o.customer_phone].filter(Boolean).join(" · "))}</dd>
               <dt>Ship to</dt><dd>${esc(ship)}${a && a.country && a.country !== "US" ? `\n${esc(a.country)}` : ""}</dd>
-              <dt>Shipping</dt><dd>${o.shipping_cents ? money(o.shipping_cents) : "Free"}${o.ship_dest && o.ship_dest !== "US" ? ` · ${esc(o.ship_dest === "US-HI" ? "Hawaii rate" : o.ship_dest)}` : ""}</dd>
+              <dt>Shipping</dt><dd>${o.shipping_cents ? money(o.shipping_cents) : "Free"}${o.ship_dest && o.ship_dest !== "US" ? ` · ${esc(({ "US-HI": "Hawaii rate", "US-AK": "Alaska rate", PR: "Puerto Rico rate" })[o.ship_dest] || o.ship_dest)}` : ""}</dd>
               <dt>Back</dt><dd>${o.has_back ? ({ ai: "AI design + QR code", qr: "QR code layout", upload: "Customer upload" })[o.back_mode] : "Blank"}</dd>
               ${o.qr_url ? `<dt>QR link</dt><dd><a href="${esc(o.qr_url)}" target="_blank" rel="noopener">${esc(o.qr_url)}</a></dd>` : ""}
               ${o.notes ? `<dt>Notes</dt><dd>${esc(o.notes)}</dd>` : ""}
