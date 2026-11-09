@@ -36,6 +36,18 @@ app.post("/api/stripe-webhook", express.raw({ type: "application/json" }), async
   res.json({ received: true });
 });
 
+// Send page visits to the secure canonical address (https://www...). API calls and
+// the Stripe webhook are left alone so nothing posted gets redirected.
+const CANONICAL = new URL(SITE_URL);
+app.use((req, res, next) => {
+  if (req.method !== "GET" || req.path.startsWith("/api/") || CANONICAL.protocol !== "https:") return next();
+  const proto = req.headers["x-forwarded-proto"];
+  if (proto === "http" || req.hostname !== CANONICAL.hostname) {
+    return res.redirect(301, `${CANONICAL.origin}${req.originalUrl}`);
+  }
+  next();
+});
+
 app.use(express.json({ limit: "8mb" }));
 app.use(express.static(path.join(__dirname, "public"), { extensions: ["html"] }));
 
