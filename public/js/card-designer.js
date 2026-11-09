@@ -5,10 +5,10 @@
     catalog: null,
     designId: null, // AI design saved on the server
     upload: null, // { name, dataUrl, mime }
-    thickness: "0.5",
+    thickness: "0.3", // defaults are the cheapest options
     finish: "black",
     busy: { front: false, back: false }, // a design is being made for this side
-    qty: 50,
+    qty: 10,
     promo: "",
     dest: "US",
     view: "front", // which side the preview shows
