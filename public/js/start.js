@@ -3,6 +3,13 @@
   const { plans, powerFeatures } = await (await fetch("/api/plans")).json();
   const money = (c) => `$${(c / 100).toLocaleString("en-US", { maximumFractionDigits: c % 100 ? 2 : 0 })}`;
   const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  // "50 free metal business cards" → "... ($150 value)".
+  const withValue = (f, p) => {
+    const text = esc(f);
+    return p.cardsValueCents && /free metal business cards/i.test(f)
+      ? `${text} <strong class="value">(${money(p.cardsValueCents)} value)</strong>`
+      : text;
+  };
 
   const wanted = new URLSearchParams(location.search).get("plan");
   $("#plan").innerHTML = plans.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join("");
@@ -13,7 +20,7 @@
     const p = plans.find((x) => x.id === $("#plan").value);
     $("#plan-price").innerHTML = `${money(p.monthlyCents)}<small>/mo + ${money(p.setupCents)} setup</small>`;
     $("#plan-delivery").textContent = p.delivery;
-    $("#plan-features").innerHTML = p.features.map((f) => `<li>${esc(f)}</li>`).join("");
+    $("#plan-features").innerHTML = p.features.map((f) => `<li>${withValue(f, p)}</li>`).join("");
     $("#due-today").textContent = money(p.setupCents);
     $("#monthly-start").textContent = `${money(p.monthlyCents)}/mo starts in ${p.trialDays} days, around when your site goes live.`;
     $("#feature-set").hidden = p.id !== "business";

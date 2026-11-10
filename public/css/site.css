@@ -229,6 +229,7 @@ textarea { min-height: 110px; resize: vertical; }
 .plan ul { list-style: none; padding: 0; margin: 0 0 16px; font-size: .92rem; flex: 1; }
 .plan li { padding: 6px 0 6px 24px; position: relative; border-top: 1px solid var(--line); }
 .plan li::before { content: "✓"; position: absolute; left: 2px; color: var(--accent-dark); font-weight: 800; }
+.plan .value, .summary .value { color: var(--ok); white-space: nowrap; }
 .plan .delivery { font-size: .85rem; font-weight: 700; color: var(--ink); margin-bottom: 12px; }
 .plan .upgrade { font-size: .82rem; color: var(--accent-dark); background: #fffbeb; border-radius: 8px; padding: 8px 10px; margin-bottom: 14px; }
 .custom-plan { display: flex; justify-content: space-between; align-items: center; gap: 20px; margin-top: 18px; flex-wrap: wrap; }

@@ -535,7 +535,15 @@ app.get("/api/order-status", async (req, res) => {
 
 // ---------- website plans ----------
 
-app.get("/api/plans", (req, res) => res.json({ plans: plans.PLANS, powerFeatures: plans.POWER_FEATURES }));
+// Free cards are shown with their retail value: the cheapest card's price × the count,
+// so it stays right if card prices change.
+app.get("/api/plans", (req, res) => {
+  const cheapestCard = Math.min(...catalog.cardThickness.map((t) => t.perCard)) + Math.min(...catalog.cardFinish.map((f) => f.upcharge));
+  res.json({
+    plans: plans.PLANS.map((p) => ({ ...p, cardsValueCents: Math.round(p.cards * cheapestCard * 100) })),
+    powerFeatures: plans.POWER_FEATURES,
+  });
+});
 
 app.post("/api/plan-checkout", async (req, res) => {
   if (!stripe) return res.status(503).json({ error: "Online checkout isn't switched on yet." });
