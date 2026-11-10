@@ -642,6 +642,7 @@ async function sendProjectAlert(p) {
   const lines = [
     `NEW WEBSITE PROJECT — ${plan.name} ($${(plan.setupCents / 100).toFixed(2)} setup paid, $${(plan.monthlyCents / 100).toFixed(2)}/mo starts in ${plan.trialDays} days)`,
     `Deliver by: ${plan.delivery.replace(/^Live in /, "")}`,
+    plan.cards ? `Includes: ${plan.cards} free metal business cards` : null,
     ``,
     `Business: ${d.business}${d.industry ? ` (${d.industry})` : ""}`,
     d.description ? `About: ${d.description}` : null,
