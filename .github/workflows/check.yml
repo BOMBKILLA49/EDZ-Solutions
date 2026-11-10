@@ -1,0 +1,22 @@
+  name: Check
+  on:
+    push:
+      branches: [main]
+    pull_request:
+  jobs:
+    check:
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v4
+        - uses: actions/setup-node@v4
+          with:
+            node-version: 22
+            cache: npm
+        - run: npm ci
+        - name: Check JavaScript syntax
+          run: |
+            for f in server.js lib/*.js config/*.js public/js/*.js; do
+              node --check "$f" || exit 1
+            done
+        - name: Check config files load
+          run: node -e 'for (const f of ["catalog", "shipping", "plans"]) require("./config/" + f); console.log("config OK")'
