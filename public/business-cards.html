@@ -12,15 +12,21 @@
   <link rel="stylesheet" href="/css/site.css">
 </head>
 <body>
-  <section class="page-head" style="padding:52px 0 44px">
-    <div class="wrap">
-      <div class="eyebrow" style="color:var(--accent)">Metal business cards</div>
-      <h1>Design your card. Watch it engraved.</h1>
-      <p class="lead">Describe the look you want and our AI designer lays out your card, or upload artwork you already have. Then choose thickness, finish and quantity.</p>
+  <section class="hero-banner">
+    <h1 class="sr-only">Custom metal business cards: design yours with AI or upload your own, then watch it engraved</h1>
+    <div class="hero-frame">
+      <img src="/img/business-cards-banner.jpg" srcset="/img/business-cards-banner-1024.jpg 1024w, /img/business-cards-banner.jpg 2048w" sizes="100vw" width="2048" height="768" fetchpriority="high"
+        alt="Custom metal business cards: professional, durable, memorable. Premium metal cards, precision laser engraved, custom designs">
+      <a class="hero-hit hero-hit-cardrow" href="#designer" data-open-tab="ai" aria-label="Start designing your card"></a>
+    </div>
+    <!-- Both buttons centered under the middle cards; they open the designer on the matching tab. -->
+    <div class="hero-ctas">
+      <a class="btn hero-cta-web" style="--x: 40%" href="#designer" data-open-tab="ai">&#10024; Design with AI</a>
+      <a class="btn hero-cta-card" style="--x: 60%" href="#designer" data-open-tab="upload">Upload my design</a>
     </div>
   </section>
 
-  <section class="section" style="padding-top:48px">
+  <section class="section" id="designer" style="padding-top:48px">
     <div class="wrap designer">
       <!-- left: controls -->
       <div>

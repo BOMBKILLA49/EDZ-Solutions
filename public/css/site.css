@@ -92,6 +92,7 @@ p { margin: 0 0 1em; }
 .hero-hit-web { left: 1.5%; top: 14%; width: 32%; height: 63%; }
 .hero-hit-card { left: 71%; top: 35%; width: 28%; height: 45%; }
 .hero-hit-laser-card { left: 14.5%; top: 37%; width: 22%; height: 36%; }
+.hero-hit-cardrow { left: 1%; top: 36%; width: 98%; height: 42%; }
 .hero-hit-devices { left: 2%; top: 4%; width: 47%; height: 82%; }
 .hero-ctas { position: relative; max-width: 2048px; margin: 0 auto; height: 76px; }
 /* Each button's --x (set in the HTML) is the point in the banner it's centered under. */

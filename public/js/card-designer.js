@@ -28,6 +28,16 @@
     })
   );
 
+  // Banner buttons: open the designer on the AI or upload tab and start there.
+  document.querySelectorAll("[data-open-tab]").forEach((a) =>
+    a.addEventListener("click", (e) => {
+      e.preventDefault();
+      document.querySelector(`[data-tab="${a.dataset.openTab}"]`).click();
+      $("#designer").scrollIntoView({ behavior: "smooth", block: "start" });
+      if (a.dataset.openTab === "ai") setTimeout(() => $("#details").elements.name.focus({ preventScroll: true }), 500);
+    })
+  );
+
   // ---------- options ----------
   function radios(container, name, items, current, label, onPick) {
     container.innerHTML = items
