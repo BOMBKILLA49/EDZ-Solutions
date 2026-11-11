@@ -12,20 +12,19 @@
   <link rel="stylesheet" href="/css/site.css">
 </head>
 <body>
-  <section class="hero">
-    <div class="wrap">
-      <div class="eyebrow">EDZ Solutions</div>
-      <h1>We build the <span>websites</span> and engrave the <span>metal</span> your business runs on.</h1>
-      <p class="lead">Custom websites that bring in calls and sales. Metal business cards and laser-engraved products you design yourself with AI, then watch us make live on TikTok.</p>
-      <div class="btn-row">
-        <a class="btn btn-primary" href="/business-cards">Design a metal business card</a>
-        <a class="btn btn-ghost" href="/web-design#plans">Website plans from $19/mo</a>
-      </div>
-      <div class="hero-stats">
-        <div><strong>6+</strong>Live business websites</div>
-        <div><strong>Fiber laser</strong>Permanent metal engraving</div>
-        <div><strong>Live</strong>Watch your order made on TikTok</div>
-      </div>
+  <section class="hero-banner">
+    <h1 class="sr-only">EDZ Solutions: website design and laser engraving for businesses</h1>
+    <div class="hero-frame">
+      <img src="/img/hero-showcase.jpg" srcset="/img/hero-showcase-1024.jpg 1024w, /img/hero-showcase.jpg 2048w" sizes="100vw" width="2048" height="768" fetchpriority="high"
+        alt="Website design and laser engraving for businesses: custom websites and laser engraved business cards">
+      <!-- The laptop and the engraved card in the banner are clickable too. -->
+      <a class="hero-hit hero-hit-web" href="/web-design#plans" aria-label="See website plans"></a>
+      <a class="hero-hit hero-hit-card" href="/business-cards" aria-label="Design your business card"></a>
+    </div>
+    <!-- Each button sits under its matching column of the banner. -->
+    <div class="hero-ctas">
+      <a class="btn btn-primary hero-cta-web" href="/web-design#plans">Website plans from $19/mo</a>
+      <a class="btn hero-cta-card" href="/business-cards">Design your business card</a>
     </div>
   </section>
 
