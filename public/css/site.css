@@ -91,13 +91,14 @@ p { margin: 0 0 1em; }
 .hero-hit:focus-visible { outline: 3px solid var(--accent); }
 .hero-hit-web { left: 1.5%; top: 14%; width: 32%; height: 63%; }
 .hero-hit-card { left: 71%; top: 35%; width: 28%; height: 45%; }
+.hero-hit-devices { left: 2%; top: 4%; width: 47%; height: 82%; }
 .hero-ctas { position: relative; max-width: 2048px; margin: 0 auto; height: 76px; }
-/* Centered under the banner's "Custom Websites" (39.7%) and "Laser Engraved Metal Business Cards" (60.4%) columns. */
-.hero-ctas .btn { position: absolute; top: 12px; transform: translateX(-50%); white-space: nowrap; box-shadow: 0 8px 24px rgba(0,0,0,.35); }
+/* Each button's --x (set in the HTML) is the point in the banner it's centered under. */
+.hero-ctas .btn { position: absolute; left: var(--x); top: 12px; transform: translateX(-50%); white-space: nowrap; box-shadow: 0 8px 24px rgba(0,0,0,.35); }
 /* Orange to match the banner; brushed steel to match its metal card. */
-.hero-cta-web { left: 39.7%; background: linear-gradient(180deg, #ff9a1f, #f26b0f); color: #fff; }
+.hero-cta-web { background: linear-gradient(180deg, #ff9a1f, #f26b0f); color: #fff; }
 .hero-cta-web:hover { background: linear-gradient(180deg, #ffab45, #f47c26); }
-.hero-cta-card { left: 60.4%; background: linear-gradient(180deg, #f1f2f4, #b9bdc3); color: #111; }
+.hero-cta-card { background: linear-gradient(180deg, #f1f2f4, #b9bdc3); color: #111; }
 .hero-cta-card:hover { background: linear-gradient(180deg, #ffffff, #cdd0d5); }
 @media (max-width: 760px) {
   .hero-ctas { height: auto; display: grid; gap: 10px; padding: 14px 16px 20px; }
