@@ -149,6 +149,16 @@
           <div class="opts" id="opt-qty"></div>
         </div>
 
+        <!-- Phone-only full preview: flip between front and back before ordering. -->
+        <div class="final-preview">
+          <div class="side-tabs" role="tablist">
+            <button type="button" class="active" data-final="front" role="tab">Front</button>
+            <button type="button" data-final="back" role="tab">Back</button>
+          </div>
+          <div class="metal-card" id="final-card" data-finish="black"><div class="placeholder"></div></div>
+          <p class="hint" id="final-note"></p>
+        </div>
+
         <h3>4. Watch it live <span class="hint">(optional)</span></h3>
         <label class="check"><input type="checkbox" id="watch-live" checked> Engrave my cards on TikTok Live and give me a shout-out</label>
         <label>Your TikTok handle <span class="hint">(optional)</span><input id="tiktok" placeholder="@yourhandle"></label>

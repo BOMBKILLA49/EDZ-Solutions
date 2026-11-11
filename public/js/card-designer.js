@@ -12,6 +12,7 @@
     promo: "",
     dest: "US",
     view: "front", // which side the preview shows
+    finalView: "front", // which side the preview under Quantity shows
     back: { mode: "none", designId: null, upload: null },
   };
   const hasBack = () => state.back.mode !== "none";
@@ -245,7 +246,7 @@
   function backView() {
     const b = state.back;
     const params = new URLSearchParams({ url: qrUrl(), finish: state.finish, company: details().company || details().name || "", caption: $("#qr-caption").value.trim() });
-    if (b.mode === "none") return { text: "Blank back: nothing engraved on this side." };
+    if (b.mode === "none") return { blank: true, note: "Blank back: nothing engraved on this side." };
     if (b.mode === "upload") {
       if (!b.upload) return { text: "Choose your back artwork" };
       if (b.upload.mime === "application/pdf") return { text: `PDF uploaded: ${b.upload.name}` };
@@ -277,6 +278,8 @@
     if (v.src) {
       el.append(engravedImage(v.src, label, v.cls));
       placeholder.hidden = true;
+    } else if (v.blank) {
+      placeholder.hidden = true; // plain metal, nothing engraved
     } else {
       placeholder.hidden = false;
       placeholder.textContent = v.text;
@@ -284,7 +287,19 @@
   }
 
   function renderPreview() {
-    document.querySelectorAll("[data-side]").forEach((t) => t.classList.toggle("active", t.dataset.side === state.view));
+    document.querySelectorAll("[data-final]").forEach((t) =>
+    t.addEventListener("click", () => {
+      if (state.finalView === t.dataset.final) return;
+      state.finalView = t.dataset.final;
+      const fc = $("#final-card");
+      fc.classList.remove("flip");
+      void fc.offsetWidth; // restart the flip animation
+      fc.classList.add("flip");
+      setTimeout(renderPreview, 170); // swap sides at the halfway point of the flip
+    })
+  );
+
+  document.querySelectorAll("[data-side]").forEach((t) => t.classList.toggle("active", t.dataset.side === state.view));
     const front = frontView();
     const back = backView();
     const v = state.view === "back" ? back : front;
@@ -303,6 +318,14 @@
       if (!el.hidden) paintCard(el, el.dataset.mini === "back" ? back : front, `Card ${el.dataset.mini} preview`);
     });
     $("#front-mini-note").hidden = !state.designId;
+
+    // Preview under Quantity, with its own Front/Back toggle.
+    const fv = state.finalView === "back" ? back : front;
+    paintCard($("#final-card"), fv, `Card ${state.finalView} preview`);
+    document.querySelectorAll("[data-final]").forEach((t) => t.classList.toggle("active", t.dataset.final === state.finalView));
+    $("#final-note").textContent = fv.blank
+      ? "Blank back: nothing engraved on this side."
+      : state.finalView === "back" && fv.note ? fv.note : "";
 
     if (state.view === "back") {
       $("#preview-note").textContent = v.note || "The preview shows your design engraved on the metal you pick.";

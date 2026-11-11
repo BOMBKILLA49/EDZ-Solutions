@@ -231,6 +231,12 @@ textarea { min-height: 110px; resize: vertical; }
 #back-ai-fields, #back-upload-fields { margin-bottom: 8px; }
 .designer h4.sub { font-size: 1rem; color: var(--ink); margin: 0 0 10px; }
 .opt .rec { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 99px; background: var(--accent); color: var(--ink); font-size: .68rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; vertical-align: 2px; }
+/* Full preview under Quantity on phones (desktop has the side preview). */
+.final-preview { display: none; }
+@media (max-width: 960px) { .final-preview { display: block; margin: 4px 0 26px; } .final-preview .side-tabs { margin-bottom: 12px; } }
+.metal-card.flip { animation: card-flip .35s ease; }
+@keyframes card-flip { 0% { transform: perspective(900px) rotateY(0); } 50% { transform: perspective(900px) rotateY(90deg); } 100% { transform: perspective(900px) rotateY(0); } }
+
 /* Phone-sized previews right under each design button; desktop uses the side preview. */
 .mini-preview, .mini-note { display: none !important; }
 @media (max-width: 960px) {
