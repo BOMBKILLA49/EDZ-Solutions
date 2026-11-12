@@ -1,5 +1,7 @@
 (function () {
   const $ = (s) => document.querySelector(s);
+  // The wedding card page uses this same designer (<body data-product="wedding">).
+  const wedding = document.body.dataset.product === "wedding";
   const state = {
     mode: "ai",
     catalog: null,
@@ -8,7 +10,11 @@
     thickness: "0.3", // defaults are the cheapest options
     finish: "black",
     busy: { front: false, back: false }, // a design is being made for this side
-    qty: 10,
+    qty: wedding ? 50 : 10,
+    layout: "same", // wedding: "same" text on every card, or "guest" = one guest name per card
+    guests: [],
+    font: "script",
+    guestIndex: 0, // which guest the preview shows
     promo: "",
     dest: "US",
     view: "front", // which side the preview shows
@@ -16,6 +22,9 @@
     back: { mode: "none", designId: null, upload: null },
   };
   const hasBack = () => state.back.mode !== "none";
+  const guestMode = () => wedding && state.layout === "guest";
+  // A guest list sets the card count: one card per name.
+  const qty = () => (guestMode() ? state.guests.length : state.qty);
   const money = (cents) => `$${(cents / 100).toFixed(2)}`;
   const card = $("#card");
 
@@ -60,9 +69,11 @@
     radios($("#opt-finish"), "finish", c.finish, state.finish,
       (f) => ({ value: f.id, html: `<span class="swatch" style="background:${f.swatch}"></span>${f.label}${f.recommended ? '<span class="rec">Recommended</span>' : ""}<small>${f.upcharge ? `+$${f.upcharge.toFixed(2)}/card` : "Included"}</small>` }),
       (v) => { state.finish = v; renderPreview(); updatePrice(); });
-    radios($("#opt-qty"), "qty", c.quantity, state.qty,
-      (q) => ({ value: q.qty, html: `${q.qty} cards<small>${q.discount ? `Save ${Math.round(q.discount * 100)}%` : "&nbsp;"}</small>` }),
-      (v) => { state.qty = Number(v); updatePrice(); });
+    if ($("#opt-qty")) {
+      radios($("#opt-qty"), "qty", c.quantity, state.qty,
+        (q) => ({ value: q.qty, html: `${q.qty} cards<small>${q.discount ? `Save ${Math.round(q.discount * 100)}%` : "&nbsp;"}</small>` }),
+        (v) => { state.qty = Number(v); updatePrice(); });
+    }
 
     // Ship-to list: US first, then Hawaii and Puerto Rico, then every other country by name.
     const names = new Intl.DisplayNames(["en"], { type: "region" });
@@ -88,8 +99,15 @@
   }
 
   async function updatePrice() {
+    const n = qty();
+    if (!(n >= 10 && n <= 500)) {
+      $("#total").textContent = "$—";
+      $("#each").textContent = guestMode() ? `Add at least 10 guest names (you have ${n})` : "Choose 10 to 500 cards";
+      $("#ship-note").textContent = "";
+      return;
+    }
     try {
-      const p = await postJSON("/api/price", { thickness: state.thickness, finish: state.finish, qty: state.qty, promo: state.promo, back: hasBack(), dest: state.dest });
+      const p = await postJSON("/api/price", { thickness: state.thickness, finish: state.finish, qty: n, promo: state.promo, back: hasBack(), dest: state.dest });
       $("#back-price").textContent = `+${money(Math.round(p.frontCents * 0.25))} per card, 75% off`;
       const discounted = p.discountCents > 0;
       const ship = p.shipping;
@@ -106,10 +124,10 @@
       }
       const shipText = ship ? (ship.cents ? ` + ${money(ship.cents)} shipping` : " · free shipping") : "";
       $("#each").textContent = (p.promo
-        ? `${state.qty} cards · promo ${p.promo.code}: ${p.promo.label}`
+        ? `${n} cards · promo ${p.promo.code}: ${p.promo.label}`
         : hasBack()
-          ? `${state.qty} cards · ${money(p.frontCents)} front + ${money(p.backCents)} back each`
-          : `${state.qty} cards · ${money(p.eachCents)} each`) + shipText;
+          ? `${n} cards · ${money(p.frontCents)} front + ${money(p.backCents)} back each`
+          : `${n} cards · ${money(p.eachCents)} each`) + shipText;
       const msg = $("#promo-msg");
       if (p.promoError) {
         state.promo = "";
@@ -245,7 +263,7 @@
   // What the back looks like right now: an image to show, or a message.
   function backView() {
     const b = state.back;
-    const params = new URLSearchParams({ url: qrUrl(), finish: state.finish, company: details().company || details().name || "", caption: $("#qr-caption").value.trim() });
+    const params = new URLSearchParams({ url: qrUrl(), finish: state.finish, company: details().couple || details().company || details().name || "", caption: $("#qr-caption").value.trim() });
     if (b.mode === "none") return { blank: true, note: "Blank back: nothing engraved on this side." };
     if (b.mode === "upload") {
       if (!b.upload) return { text: "Choose your back artwork" };
@@ -262,6 +280,10 @@
   }
 
   function frontView() {
+    if (state.mode === "ai" && state.designId && guestMode()) {
+      const name = state.guests[state.guestIndex] || "Guest Name";
+      return { src: `/api/place-card-image?${new URLSearchParams({ design: state.designId, name, font: state.font })}`, cls: "engrave" };
+    }
     if (state.mode === "ai" && state.designId) return { src: `/api/design-image/${state.designId}`, cls: "engrave" };
     if (state.mode === "upload" && state.upload) {
       if (state.upload.mime === "application/pdf") return { text: `PDF uploaded: ${state.upload.name}` };
@@ -286,8 +308,7 @@
     }
   }
 
-  function renderPreview() {
-    document.querySelectorAll("[data-final]").forEach((t) =>
+  document.querySelectorAll("[data-final]").forEach((t) =>
     t.addEventListener("click", () => {
       if (state.finalView === t.dataset.final) return;
       state.finalView = t.dataset.final;
@@ -299,7 +320,8 @@
     })
   );
 
-  document.querySelectorAll("[data-side]").forEach((t) => t.classList.toggle("active", t.dataset.side === state.view));
+  function renderPreview() {
+    document.querySelectorAll("[data-side]").forEach((t) => t.classList.toggle("active", t.dataset.side === state.view));
     const front = frontView();
     const back = backView();
     const v = state.view === "back" ? back : front;
@@ -383,7 +405,7 @@
     const mini = document.getElementById(side === "back" ? "back-mini-ai" : "front-mini-ai");
     if (window.matchMedia("(max-width: 960px)").matches) mini.scrollIntoView({ behavior: "smooth", block: "center" });
     try {
-      const out = await waitForDesign({ ...body, side });
+      const out = await waitForDesign({ ...body, side, product: wedding ? "wedding" : "business", layout: state.layout });
       if (side === "back") {
         state.back.designId = out.designId;
         $("#back-revise").classList.add("show");
@@ -487,22 +509,24 @@
     msg.className = "msg";
     let design;
     let d = details();
+    if (guestMode() && state.guests.length < 10) return showMsg(msg, `Add at least 10 guest names, one per line (you have ${state.guests.length}).`, false);
     if (state.mode === "ai") {
-      if (!state.designId) return showMsg(msg, "Create your design first (step 2), or switch to Upload.", false);
+      if (!state.designId) return showMsg(msg, "Create your design first (step 1), or switch to Upload.", false);
       design = { type: "ai", designId: state.designId };
     } else {
+      if (guestMode()) return showMsg(msg, "Guest names work with the AI designer. Switch to Design with AI, or choose the same text on every card.", false);
       if (!state.upload) return showMsg(msg, "Upload your artwork first.", false);
       design = { type: "upload", name: state.upload.name, dataUrl: state.upload.dataUrl };
-      d = { name: $("#upload-name").value };
+      d = wedding ? { couple: $("#upload-name").value } : { name: $("#upload-name").value };
     }
     const b = state.back;
     const back = { mode: b.mode };
     if (b.mode === "ai" || b.mode === "qr") {
-      if (!looksLikeUrl(qrUrl())) return showMsg(msg, "Add the link for the QR code on the back (step 3).", false);
-      if (b.mode === "ai" && !b.designId) return showMsg(msg, "Create your back design first (step 3).", false);
+      if (!looksLikeUrl(qrUrl())) return showMsg(msg, "Add the link for the QR code on the back (step 2).", false);
+      if (b.mode === "ai" && !b.designId) return showMsg(msg, "Create your back design first (step 2).", false);
       Object.assign(back, { url: qrUrl(), caption: $("#qr-caption").value, designId: b.designId });
     } else if (b.mode === "upload") {
-      if (!b.upload) return showMsg(msg, "Upload your back artwork first (step 3).", false);
+      if (!b.upload) return showMsg(msg, "Upload your back artwork first (step 2).", false);
       Object.assign(back, { name: b.upload.name, dataUrl: b.upload.dataUrl });
     }
     const btn = e.currentTarget;
@@ -514,7 +538,11 @@
         design,
         thickness: state.thickness,
         finish: state.finish,
-        qty: state.qty,
+        qty: qty(),
+        product: wedding ? "wedding" : "business",
+        layout: state.layout,
+        guests: guestMode() ? state.guests : undefined,
+        font: state.font,
         promo: state.promo,
         dest: state.dest,
         back,
@@ -529,6 +557,58 @@
       btn.textContent = "Order & pay securely";
     }
   });
+
+  // ---------- wedding: same card for everyone, or one guest name per card ----------
+  if (wedding) {
+    const showLayout = () => {
+      const guest = guestMode();
+      $("#guest-fields").hidden = !guest;
+      $("#qty-same").hidden = guest;
+      $("#qty-guest").hidden = !guest;
+      $("#upload-guest-note").hidden = !guest;
+    };
+    $("#layout-opts").addEventListener("change", (e) => {
+      state.layout = e.target.value;
+      // A design made for one layout doesn't fit the other (guest cards need the blank middle).
+      if (state.designId) showMsg($("#ai-msg"), guestMode()
+        ? "Create a new design for guest names: it leaves the middle of the card blank for each name."
+        : "Create a new design so the couple's names fill the middle of the card.", false);
+      showLayout();
+      renderPreview();
+      updatePrice();
+    });
+
+    const guestSelect = $("#guest-preview");
+    let guestTimer;
+    $("#guests").addEventListener("input", (e) => {
+      state.guests = e.target.value.split(/\r?\n/).map((n) => n.trim()).filter(Boolean);
+      state.guestIndex = Math.min(state.guestIndex, Math.max(state.guests.length - 1, 0));
+      $("#guest-count").textContent = `${state.guests.length} ${state.guests.length === 1 ? "name" : "names"}`;
+      $("#qty-guest-count").textContent = state.guests.length;
+      guestSelect.innerHTML = state.guests.map((n, i) => `<option value="${i}">${n.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c])}</option>`).join("");
+      guestSelect.value = String(state.guestIndex);
+      clearTimeout(guestTimer);
+      guestTimer = setTimeout(() => {
+        renderPreview();
+        updatePrice();
+      }, 500);
+    });
+    guestSelect.addEventListener("change", () => {
+      state.guestIndex = Number(guestSelect.value);
+      state.view = "front";
+      renderPreview();
+    });
+    $("#font-opts").addEventListener("change", (e) => {
+      state.font = e.target.value;
+      state.view = "front";
+      renderPreview();
+    });
+    $("#qty-input").addEventListener("input", (e) => {
+      state.qty = Math.round(Number(e.target.value));
+      updatePrice();
+    });
+    showLayout();
+  }
 
   loadCatalog();
 })();

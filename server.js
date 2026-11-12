@@ -10,6 +10,7 @@ const { pool, migrate } = require("./lib/db");
 const { sendAlert } = require("./lib/mailer");
 const cardback = require("./lib/cardback");
 const { withDpi, imageMime, normalizeUrl } = cardback;
+const { ZipWriter } = require("./lib/zip");
 
 const PORT = process.env.PORT || 3000;
 const SITE_URL = (process.env.SITE_URL || `http://localhost:${PORT}`).replace(/\/$/, "");
@@ -74,6 +75,24 @@ function cardDetails(body) {
     tagline: clean(d.tagline, 100),
   };
 }
+
+// Wedding cards: the couple's names, the date and an optional line (a thank-you, the venue...).
+function weddingDetails(body) {
+  const d = body.details || {};
+  return { couple: clean(d.couple, 60), date: clean(d.date, 40), line: clean(d.line, 80) };
+}
+
+const isWedding = (body) => body.product === "wedding";
+const detailsFor = (body) => (isWedding(body) ? weddingDetails(body) : cardDetails(body));
+
+// One guest name per line, blank lines dropped. Returns null when the list is too short or long.
+function guestList(raw) {
+  const names = (Array.isArray(raw) ? raw : String(raw || "").split(/\r?\n/)).map((n) => clean(n, 60)).filter(Boolean);
+  return names.length >= catalog.MIN_QTY && names.length <= catalog.MAX_QTY ? names : null;
+}
+
+const NAME_FONTS = Object.keys(cardback.NAME_FONTS);
+const nameFont = (v) => (NAME_FONTS.includes(v) ? v : "script");
 
 // Simple per-IP limit so the AI designer can't be used to run up the API bill.
 const hits = new Map();
@@ -182,11 +201,34 @@ The customer's style request: ${style || "clean, modern and professional"}
 Do not draw a QR code or barcode. Do not use any brand logo or trademark other than this customer's own business name. Keep all text at least 6% in from every edge so nothing is cut off.`;
 }
 
+function weddingPrompt(details, style, guestMode) {
+  const text = [
+    `"${details.couple}"${guestMode ? "" : " (the main, largest text)"}`,
+    details.date && `"${details.date}"`,
+    details.line && `"${details.line}"`,
+  ].filter(Boolean).join("\n");
+  return `Design a horizontal 3.375 x 2.125 inch (credit-card size) wedding ${guestMode ? "place card" : "keepsake card"} that will be laser engraved on a metal card and set on each guest's plate.
+
+Fill the entire image edge to edge with the flat card design, viewed straight on. No mockup, no hands, no table, no plate, no shadows, no perspective, no card shape sitting on a background.
+${ENGRAVING_RULES}
+
+Put exactly these words on the card, spelled exactly as written, without the quote marks, and no other words or labels:
+${text}
+${guestMode ? `
+IMPORTANT: each guest's name will be engraved in the middle of the card later, so leave the middle completely blank: an empty white band from 30% to 62% of the card's height, across the middle 80% of its width. Draw nothing in that band, no lines, flourishes or text. Put the words above in the lower part of the card, below the blank band, small and elegant. Decoration (a fine border, flourishes, a small ornament at the top) goes around the edges and above the band.
+` : ""}
+The customer's style request: ${style || "elegant and timeless, with a fine border"}
+
+Do not draw a QR code or barcode. Do not use any brand logo or trademark. Keep all text at least 6% in from every edge so nothing is cut off.`;
+}
+
+const GUEST_BAND_RULE = "Keep the middle band (30% to 62% of the height, across the middle 80% of the width) completely blank for the guest's name.";
+
 // The AI only draws a square panel for the right side of the back; the site puts the
 // real QR code beside it (see lib/cardback.js), so the art can never cover the code.
-function backPrompt(details, style, caption, fromFront) {
-  const name = details.company || details.name;
-  return `${fromFront ? "This image is the FRONT of a business card. Use it only as a style reference (same fonts, line work and illustration style) and design" : "Design"} a SQUARE artwork panel for the back of a business card that will be laser engraved on metal. A QR code will be placed to the left of this panel, so do not draw a QR code, barcode or card border.
+function backPrompt(details, style, caption, fromFront, noun = "business card") {
+  const name = details.couple || details.company || details.name;
+  return `${fromFront ? `This image is the FRONT of a ${noun}. Use it only as a style reference (same fonts, line work and illustration style) and design` : "Design"} a SQUARE artwork panel for the back of a ${noun} that will be laser engraved on metal. A QR code will be placed to the left of this panel, so do not draw a QR code, barcode or card border.
 
 ${ENGRAVING_RULES} Fill the square edge to edge with no frame around it.
 Include${caption ? ` "${caption}" as a short bold headline,` : ""} the name "${name}"${style ? `, and imagery that fits this style: ${style}` : ""}.
@@ -240,10 +282,13 @@ app.post("/api/design", async (req, res) => {
   if (!openai) return res.status(503).json({ error: "The AI designer isn't switched on yet." });
   if (rateLimited(req.ip)) return res.status(429).json({ error: "Design limit reached for now. Try again in an hour." });
 
-  const details = cardDetails(req.body);
-  if (!details.name && !details.company) {
-    return res.status(400).json({ error: "Add at least a name or company." });
+  const wedding = isWedding(req.body);
+  const details = detailsFor(req.body);
+  if (wedding ? !details.couple : !details.name && !details.company) {
+    return res.status(400).json({ error: wedding ? "Add the couple's names." : "Add at least a name or company." });
   }
+  const guestMode = wedding && req.body.layout === "guest";
+  const noun = wedding ? "wedding card" : "business card";
   const side = req.body.side === "back" ? "back" : "front";
   const style = clean(req.body.style, 600);
   const revision = clean(req.body.revision, 600);
@@ -258,16 +303,16 @@ app.post("/api/design", async (req, res) => {
   if (req.body.previousDesignId && revision) {
     previous = await loadDesign(req.body.previousDesignId);
     if (!previous) return res.status(404).json({ error: "That design expired. Please create it again." });
-    prompt = `Edit this business card design. Change only what is asked and keep everything else the same: ${revision}
+    prompt = `Edit this ${noun} design. Change only what is asked and keep everything else the same: ${revision}
 
 Keep it flat and edge to edge. ${ENGRAVING_RULES} Keep every word, number and email spelled exactly as it is now unless the change asks otherwise:
-${[...Object.values(details), caption].filter(Boolean).join(" | ")}${side === "back" ? "\nKeep it a square panel with no QR code and no border." : ""}`;
+${[...Object.values(details), caption].filter(Boolean).join(" | ")}${side === "back" ? "\nKeep it a square panel with no QR code and no border." : guestMode ? `\n${GUEST_BAND_RULE}` : ""}`;
   } else if (side === "back") {
     // Base the back on the front design when there is one, so the two sides match.
     previous = req.body.frontDesignId ? await loadDesign(req.body.frontDesignId) : null;
-    prompt = backPrompt(details, style, caption, Boolean(previous));
+    prompt = backPrompt(details, style, caption, Boolean(previous), noun);
   } else {
-    prompt = designPrompt(details, style);
+    prompt = wedding ? weddingPrompt(details, style, guestMode) : designPrompt(details, style);
   }
 
   for (const [id, job] of designJobs) if (Date.now() - job.createdAt > JOB_TTL_MS) designJobs.delete(id);
@@ -298,6 +343,15 @@ app.get("/api/design-image/:id", async (req, res) => {
   const { rows } = await pool.query("SELECT image FROM designs WHERE id=$1", [req.params.id]).catch(() => ({ rows: [] }));
   if (!rows[0]) return res.status(404).end();
   res.set({ "Content-Type": imageMime(rows[0].image), "Cache-Control": "private, max-age=86400" }).send(rows[0].image);
+});
+
+// A wedding place card with one guest's name drawn into the AI design's blank band.
+app.get("/api/place-card-image", async (req, res) => {
+  const { rows } = await pool.query("SELECT image FROM designs WHERE id=$1", [req.query.design]).catch(() => ({ rows: [] }));
+  if (!rows[0]) return res.status(404).end();
+  const name = clean(req.query.name, 60) || "Guest Name";
+  const image = await cardback.placeCard(rows[0].image, { name, font: nameFont(req.query.font) });
+  res.set({ "Content-Type": "image/jpeg", "Cache-Control": "private, max-age=86400" }).send(image);
 });
 
 // The back with its real QR code, laid out for the chosen finish. With a design id it's
@@ -332,8 +386,15 @@ app.post("/api/checkout", async (req, res) => {
   if (!stripe) return res.status(503).json({ error: "Online checkout isn't switched on yet." });
   const back = req.body.back || {};
   const backMode = ["ai", "qr", "upload"].includes(back.mode) ? back.mode : "none";
-  const quote = catalog.quoteCard({ ...req.body, back: backMode !== "none" });
-  if (!quote) return res.status(400).json({ error: "Pick a thickness, finish and quantity." });
+  const wedding = isWedding(req.body);
+  // A guest list means one card per name, so the names set the quantity.
+  let guests = null;
+  if (wedding && req.body.layout === "guest") {
+    guests = guestList(req.body.guests);
+    if (!guests) return res.status(400).json({ error: `Add between ${catalog.MIN_QTY} and ${catalog.MAX_QTY} guest names, one per line.` });
+  }
+  const quote = catalog.quoteCard({ ...req.body, qty: guests ? guests.length : req.body.qty, back: backMode !== "none" });
+  if (!quote) return res.status(400).json({ error: `Pick a thickness, finish and a quantity from ${catalog.MIN_QTY} to ${catalog.MAX_QTY}.` });
 
   const { promo, error: promoError } = await findPromo(req.body.promo);
   if (promoError) return res.status(400).json({ error: promoError });
@@ -345,7 +406,7 @@ app.post("/api/checkout", async (req, res) => {
   const design = req.body.design || {};
   const order = {
     id: crypto.randomUUID(),
-    details: cardDetails(req.body),
+    details: detailsFor(req.body),
     watchLive: Boolean(req.body.watchLive),
     tiktok: clean(req.body.tiktok, 40),
     notes: clean(req.body.notes, 1000),
@@ -354,8 +415,15 @@ app.post("/api/checkout", async (req, res) => {
   if (design.type === "ai") {
     const { rows } = await pool.query("SELECT image FROM designs WHERE id=$1", [design.designId]).catch(() => ({ rows: [] }));
     if (!rows[0]) return res.status(400).json({ error: "Create a design first." });
-    const mime = imageMime(rows[0].image);
-    order.upload = { mime, name: mime === "image/png" ? "ai-design.png" : "ai-design.jpg", data: rows[0].image };
+    if (guests) {
+      // The laser file is the design with the name band wiped; each guest's card is built from it.
+      order.upload = { mime: "image/jpeg", name: "place-card-template.jpg", data: await cardback.placeCardTemplate(rows[0].image) };
+    } else {
+      const mime = imageMime(rows[0].image);
+      order.upload = { mime, name: mime === "image/png" ? "ai-design.png" : "ai-design.jpg", data: rows[0].image };
+    }
+  } else if (guests) {
+    return res.status(400).json({ error: "Guest names work with the AI designer. Create your design there." });
   } else if (design.type === "upload") {
     const m = /^data:(image\/(png|jpeg|svg\+xml)|application\/pdf);base64,(.*)$/s.exec(design.dataUrl || "");
     if (!m) return res.status(400).json({ error: "Upload a PNG, JPG, SVG or PDF." });
@@ -372,7 +440,7 @@ app.post("/api/checkout", async (req, res) => {
       designId: backMode === "ai" ? back.designId : null,
       url: order.qrUrl,
       finish: quote.finish.id,
-      company: order.details.company || order.details.name,
+      company: order.details.couple || order.details.company || order.details.name,
       caption: clean(back.caption, 60),
     });
     if (!data) return res.status(400).json({ error: "That back design expired. Please create it again." });
@@ -394,7 +462,7 @@ app.post("/api/checkout", async (req, res) => {
             currency: "usd",
             unit_amount: price.totalCents,
             product_data: {
-              name: `${quote.qty} metal business cards — ${quote.thickness.label}, ${quote.finish.label}${order.back ? ", front & back" : ""}`,
+              name: `${quote.qty} ${wedding ? (guests ? "metal wedding place cards (one per guest)" : "metal wedding cards") : "metal business cards"} — ${quote.thickness.label}, ${quote.finish.label}${order.back ? ", front & back" : ""}`,
               description: [
                 order.watchLive ? "Engraved live on TikTok" : "Custom laser engraved",
                 promo ? `Promo ${promo.code}: ${promoLabel(promo)}` : null,
@@ -419,21 +487,23 @@ app.post("/api/checkout", async (req, res) => {
         : {}),
       phone_number_collection: { enabled: true },
       client_reference_id: order.id,
-      metadata: { order_id: order.id, promo: promo?.code || "", thickness: quote.thickness.id, finish: quote.finish.id, qty: String(quote.qty), tiktok: order.tiktok },
+      metadata: { order_id: order.id, product: wedding ? "wedding" : "business", promo: promo?.code || "", thickness: quote.thickness.id, finish: quote.finish.id, qty: String(quote.qty), tiktok: order.tiktok },
       success_url: `${SITE_URL}/order-complete?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${SITE_URL}/business-cards`,
+      cancel_url: `${SITE_URL}/${wedding ? "wedding-cards" : "business-cards"}`,
     });
 
     await pool.query(
       `INSERT INTO orders (id, stripe_session, details, thickness, finish, qty, total_cents, watch_live, tiktok, notes,
                            design_type, upload_name, upload_mime, upload_data, promo_code, discount_cents,
-                           back_mode, back_name, back_mime, back_data, qr_url, shipping_cents, ship_dest)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)`,
+                           back_mode, back_name, back_mime, back_data, qr_url, shipping_cents, ship_dest,
+                           product, guest_names, name_font)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)`,
       [order.id, session.id, order.details, quote.thickness.id, quote.finish.id, quote.qty, price.totalCents,
        order.watchLive, order.tiktok, order.notes, design.type, order.upload.name, order.upload.mime, order.upload.data,
        promo?.code || null, price.discountCents,
        backMode, order.back?.name || null, order.back?.mime || null, order.back?.data || null, order.qrUrl || null,
-       ship.cents, dest]
+       ship.cents, dest,
+       wedding ? "wedding" : "business", guests ? JSON.stringify(guests) : null, guests ? nameFont(req.body.font) : null]
     );
     res.json({ url: session.url });
   } catch (err) {
@@ -485,6 +555,18 @@ function designFile(order, side = "front") {
 }
 
 const BACK_LABEL = { none: "blank", ai: "AI design + QR code", qr: "QR code layout", upload: "customer upload" };
+const FONT_LABEL = { script: "script (Great Vibes)", serif: "serif (Cormorant Garamond)" };
+
+function cardText(o) {
+  const d = o.details || {};
+  const parts = o.product === "wedding" ? [d.couple, d.date, d.line] : [d.name, d.title, d.company, d.phone, d.email, d.website, d.tagline];
+  return parts.filter(Boolean).join(" | ");
+}
+
+// File-name-safe version of a guest's name for the per-card files.
+const fileSafe = (s) => s.normalize("NFKD").replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-").slice(0, 40) || "guest";
+const guestFileName = (o, i, name) => `EDZ-${o.id.slice(0, 8)}-${String(i + 1).padStart(3, "0")}-${fileSafe(name)}.jpg`;
+const guestCard = (o, name) => cardback.placeCard(o.upload_data, { name, font: o.name_font });
 
 async function sendOrderAlert(o) {
   const d = o.details || {};
@@ -494,15 +576,17 @@ async function sendOrderAlert(o) {
     `NEW PAID ORDER — $${((o.total_cents + o.shipping_cents) / 100).toFixed(2)} (cards $${(o.total_cents / 100).toFixed(2)} + shipping $${(o.shipping_cents / 100).toFixed(2)})`,
     o.ship_flag ? `⚠️ SHIPPING MISMATCH: ${o.ship_flag}` : null,
     ``,
+    o.product === "wedding" ? `WEDDING CARDS${o.guest_names ? " — one per guest" : ""}` : null,
     `${o.qty} cards · ${o.thickness} mm · ${FINISH_LABEL[o.finish] || o.finish}`,
     o.promo_code ? `Promo: ${o.promo_code} (saved $${(o.discount_cents / 100).toFixed(2)})` : null,
     `Front: ${o.design_type === "ai" ? "AI design" : `customer upload (${o.upload_name})`}`,
+    o.guest_names ? `Guest names: ${o.guest_names.length}, in ${FONT_LABEL[o.name_font] || o.name_font}. The FRONT file is the template with the name area blank; guest-names.txt is attached. Download every finished card (ZIP) from the orders page.` : null,
     `Back: ${BACK_LABEL[o.back_mode] || "blank"}${o.qr_url ? ` — QR goes to ${o.qr_url}` : ""}`,
     `Files attached are 3.375 x 2.125 in (credit-card size) at 512 DPI. The dark parts of each file are what gets engraved.`,
     `Watch live: ${o.watch_live ? `YES${o.tiktok ? ` — ${o.tiktok}` : ""}` : "no"}`,
     o.notes ? `Notes: ${o.notes}` : null,
     ``,
-    `Card text: ${[d.name, d.title, d.company, d.phone, d.email, d.website, d.tagline].filter(Boolean).join(" | ")}`,
+    `Card text: ${cardText(o)}`,
     ``,
     `Customer: ${o.customer_name || ""} · ${o.customer_email || ""} · ${o.customer_phone || ""}`,
     `Ship to:\n${shipTo}`,
@@ -511,10 +595,14 @@ async function sendOrderAlert(o) {
   ].filter((l) => l !== null);
   const text = lines.join("\n");
   await sendAlert({
-    subject: `New card order: ${o.qty} × ${FINISH_LABEL[o.finish] || o.finish} — ${o.customer_name || d.name || "customer"}`,
+    subject: `New ${o.product === "wedding" ? "wedding card" : "card"} order: ${o.qty} × ${FINISH_LABEL[o.finish] || o.finish} — ${o.customer_name || d.name || d.couple || "customer"}`,
     text,
     html: `<pre style="font:14px/1.5 -apple-system,Segoe UI,sans-serif;white-space:pre-wrap">${escapeHtml(text)}</pre>`,
-    attachments: [designFile(o, "front"), designFile(o, "back")].filter(Boolean),
+    attachments: [
+      designFile(o, "front"),
+      designFile(o, "back"),
+      o.guest_names && { filename: `EDZ-${o.id.slice(0, 8)}-guest-names.txt`, contentType: "text/plain", content: o.guest_names.join("\n") },
+    ].filter(Boolean),
   });
 }
 
@@ -744,7 +832,7 @@ app.get("/admin", requireAdmin, (req, res) => res.sendFile(path.join(__dirname, 
 app.get("/api/admin/orders", requireAdmin, async (req, res) => {
   const { rows } = await pool.query(
     `SELECT id, created_at, paid_at, status, details, thickness, finish, qty, total_cents, watch_live, tiktok, notes,
-            design_type, promo_code, discount_cents, back_mode, qr_url, shipping_cents, ship_dest, ship_flag, (back_data IS NOT NULL) AS has_back, back_name, back_mime, upload_name, upload_mime, customer_email, customer_name, customer_phone, shipping
+            design_type, product, guest_names, name_font, promo_code, discount_cents, back_mode, qr_url, shipping_cents, ship_dest, ship_flag, (back_data IS NOT NULL) AS has_back, back_name, back_mime, upload_name, upload_mime, customer_email, customer_name, customer_phone, shipping
      FROM orders WHERE status <> 'pending_payment' ORDER BY paid_at DESC LIMIT 200`
   );
   const { rows: inquiries } = await pool.query("SELECT created_at, data FROM inquiries ORDER BY created_at DESC LIMIT 50");
@@ -758,6 +846,37 @@ app.get("/api/admin/orders/:id/design", requireAdmin, async (req, res) => {
   if (!f) return res.status(404).send("No back on this order");
   if (req.query.inline) return res.set("Content-Type", f.contentType).send(f.content);
   res.set("Content-Type", f.contentType).attachment(f.filename).send(f.content);
+});
+
+// Wedding guest lists: one finished card, every card as a ZIP, or the names as text.
+async function guestOrder(id) {
+  const { rows } = await pool.query("SELECT id, upload_data, guest_names, name_font FROM orders WHERE id=$1", [id]).catch(() => ({ rows: [] }));
+  return rows[0]?.guest_names ? rows[0] : null;
+}
+
+app.get("/api/admin/orders/:id/guest/:n", requireAdmin, async (req, res) => {
+  const o = await guestOrder(req.params.id);
+  const i = Number(req.params.n);
+  const name = o?.guest_names[i];
+  if (!name) return res.status(404).send("Not found");
+  res.set("Content-Type", "image/jpeg");
+  if (!req.query.inline) res.attachment(guestFileName(o, i, name));
+  res.send(await guestCard(o, name));
+});
+
+app.get("/api/admin/orders/:id/guest-cards.zip", requireAdmin, async (req, res) => {
+  const o = await guestOrder(req.params.id);
+  if (!o) return res.status(404).send("Not found");
+  res.set("Content-Type", "application/zip").attachment(`EDZ-${o.id.slice(0, 8)}-guest-cards.zip`);
+  const z = new ZipWriter();
+  for (const [i, name] of o.guest_names.entries()) res.write(z.add(guestFileName(o, i, name), await guestCard(o, name)));
+  res.end(z.finish());
+});
+
+app.get("/api/admin/orders/:id/guest-names.txt", requireAdmin, async (req, res) => {
+  const o = await guestOrder(req.params.id);
+  if (!o) return res.status(404).send("Not found");
+  res.type("text/plain").attachment(`EDZ-${o.id.slice(0, 8)}-guest-names.txt`).send(o.guest_names.join("\n"));
 });
 
 app.post("/api/admin/orders/:id/status", requireAdmin, async (req, res) => {

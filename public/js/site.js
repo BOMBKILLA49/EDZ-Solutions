@@ -44,6 +44,7 @@ const SITE = {
           <li><a href="/web-design">Web design</a></li>
           <li><a href="/laser">Laser engraving</a></li>
           <li><a href="/business-cards">Metal business cards</a></li>
+          <li><a href="/wedding-cards">Metal wedding cards</a></li>
         </ul></div>
         <div><h4>Company</h4><ul>
           <li><a href="/#work">Our work</a></li>

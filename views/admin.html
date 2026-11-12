@@ -113,7 +113,7 @@
     const viewable = (mime) => /^image\/(png|jpeg)$/.test(mime || "");
     function preview(o) {
       const front = o.design_type === "ai" || viewable(o.upload_mime)
-        ? `<img alt="Front" src="/api/admin/orders/${o.id}/design?inline=1" style="${IMG}">`
+        ? `<img alt="Front" src="/api/admin/orders/${o.id}/${o.guest_names ? "guest/0" : "design"}?inline=1" style="${IMG}">`
         : `<div class="file-box">Customer upload<br><strong>${esc(o.upload_name)}</strong></div>`;
       if (!o.has_back) return `<div class="meta" style="margin-bottom:6px">FRONT</div>${front}`;
       const back = o.back_mode !== "upload" || viewable(o.back_mime)
@@ -141,13 +141,15 @@
             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
               <span class="pill ${o.status}">${o.status === "paid" ? "To engrave" : o.status}</span>
               ${o.watch_live ? `<span class="pill live">Live${o.tiktok ? " · " + esc(o.tiktok) : ""}</span>` : ""}
+              ${o.product === "wedding" ? `<span class="pill" style="background:#f5ecd7;color:#7c5a10">Wedding${o.guest_names ? " · guest names" : ""}</span>` : ""}
               <span class="meta">Paid ${when(o.paid_at)}</span>
             </div>
             ${o.ship_flag ? `<div class="msg show err" style="margin:0 0 10px"><strong>Shipping mismatch:</strong> ${esc(o.ship_flag)}</div>` : ""}
-            <h3>${esc(o.customer_name || d.name || "Customer")} — ${money(o.total_cents + (o.shipping_cents || 0))}</h3>
+            <h3>${esc(o.customer_name || d.name || d.couple || "Customer")} — ${money(o.total_cents + (o.shipping_cents || 0))}</h3>
             <div class="meta">${o.qty} cards · ${esc(o.thickness)} mm · ${esc(data.finishes[o.finish] || o.finish)}${o.promo_code ? ` · promo ${esc(o.promo_code)} (−${money(o.discount_cents)})` : ""}</div>
             <dl class="kv">
-              <dt>Card text</dt><dd>${esc([d.name, d.title, d.company, d.phone, d.email, d.website, d.tagline].filter(Boolean).join(" · ") || "—")}</dd>
+              <dt>Card text</dt><dd>${esc((o.product === "wedding" ? [d.couple, d.date, d.line] : [d.name, d.title, d.company, d.phone, d.email, d.website, d.tagline]).filter(Boolean).join(" · ") || "—")}</dd>
+              ${o.guest_names ? `<dt>Guests</dt><dd>${o.guest_names.length} names · ${o.name_font === "serif" ? "serif" : "script"} lettering<details style="margin-top:4px"><summary>Show names</summary>${o.guest_names.map((n, i) => `<div><a href="/api/admin/orders/${o.id}/guest/${i}">${i + 1}. ${esc(n)}</a></div>`).join("")}</details></dd>` : ""}
               <dt>Contact</dt><dd>${esc([o.customer_email, o.customer_phone].filter(Boolean).join(" · "))}</dd>
               <dt>Ship to</dt><dd>${esc(ship)}${a && a.country && a.country !== "US" ? `\n${esc(a.country)}` : ""}</dd>
               <dt>Shipping</dt><dd>${o.shipping_cents ? money(o.shipping_cents) : "Free"}${o.ship_dest && o.ship_dest !== "US" ? ` · ${esc(({ "US-HI": "Hawaii rate", "US-AK": "Alaska rate", PR: "Puerto Rico rate" })[o.ship_dest] || o.ship_dest)}` : ""}</dd>
@@ -156,7 +158,8 @@
               ${o.notes ? `<dt>Notes</dt><dd>${esc(o.notes)}</dd>` : ""}
             </dl>
             <div class="actions">
-              <a class="btn btn-dark" href="/api/admin/orders/${o.id}/design">Download front</a>
+              <a class="btn btn-dark" href="/api/admin/orders/${o.id}/design">Download front${o.guest_names ? " template" : ""}</a>
+              ${o.guest_names ? `<a class="btn btn-dark" href="/api/admin/orders/${o.id}/guest-cards.zip">All ${o.guest_names.length} guest cards (ZIP)</a><a class="btn btn-outline" href="/api/admin/orders/${o.id}/guest-names.txt">Names list</a>` : ""}
               ${o.has_back ? `<a class="btn btn-dark" href="/api/admin/orders/${o.id}/design?side=back">Download back</a>` : ""}
               ${next ? `<button class="btn btn-primary" data-id="${o.id}" data-status="${next[0]}">${next[1]}</button>` : ""}
               ${o.status !== "paid" ? `<button class="btn btn-outline" data-id="${o.id}" data-status="${o.status === "shipped" ? "engraved" : "paid"}">Undo</button>` : ""}

@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Metal Wedding Place Cards | EDZ Solutions</title>
+  <meta name="description" content="Laser-engraved metal wedding cards for every plate: the couple's names on each card, or a guest's name on each one. Design with AI, pick black, mirror or gold steel.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Great+Vibes&family=Cormorant+Garamond:wght@600&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/png" href="/img/edz-icon.png">
+  <link rel="apple-touch-icon" href="/img/edz-icon.png">
+  <link rel="stylesheet" href="/css/site.css">
+  <style>
+    .font-script { font-family: "Great Vibes", cursive; font-size: 1.5rem; line-height: 1.1; }
+    .font-serif { font-family: "Cormorant Garamond", serif; font-weight: 600; font-size: 1.3rem; line-height: 1.2; }
+    #guests { min-height: 170px; }
+    .guest-bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin: -4px 0 14px; }
+    .guest-bar select { width: auto; max-width: 100%; }
+  </style>
+</head>
+<body data-product="wedding">
+  <section class="hero" style="padding:72px 0">
+    <div class="wrap">
+      <div class="eyebrow" style="color:var(--accent)">Metal wedding cards</div>
+      <h1>A keepsake at <span>every plate</span>.</h1>
+      <p class="lead">Laser-engraved steel cards for your reception tables. Put "Mr. &amp; Mrs. Jones" on every card, or a guest's name on each one so everyone finds their seat. Your guests take them home.</p>
+      <div class="btn-row">
+        <a class="btn btn-primary" href="#designer" data-open-tab="ai">&#10024; Design with AI</a>
+        <a class="btn btn-ghost" href="#designer" data-open-tab="upload">Upload my design</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="designer" style="padding-top:48px">
+    <div class="wrap designer">
+      <!-- left: controls -->
+      <div>
+        <h3>1. Front of the card</h3>
+        <div class="tabs" role="tablist">
+          <button type="button" class="active" data-tab="ai" role="tab">&#10024; Design with AI</button>
+          <button type="button" data-tab="upload" role="tab">&#8682; Upload my design</button>
+        </div>
+
+        <h4 class="sub">What goes on each card?</h4>
+        <div class="opts back-opts" id="layout-opts">
+          <label class="opt"><input type="radio" name="layout" value="same" checked><span>Same on every card<small>"Mr. &amp; Mrs. Jones" and your date at every plate</small></span></label>
+          <label class="opt"><input type="radio" name="layout" value="guest"><span>A guest's name on each card<small>Place cards: everyone finds their seat</small></span></label>
+        </div>
+
+        <div class="panel active" data-panel="ai">
+          <h4 class="sub">Your details</h4>
+          <form id="details">
+            <label>Couple's names<input name="couple" placeholder="Mr. &amp; Mrs. Jones"></label>
+            <div class="row">
+              <label>Wedding date <span class="hint">(optional)</span><input name="date" placeholder="June 14, 2027"></label>
+              <label>Extra line <span class="hint">(optional)</span><input name="line" placeholder="Thank you for celebrating with us"></label>
+            </div>
+          </form>
+
+          <div id="guest-fields" hidden>
+            <h4 class="sub" style="margin-top:10px">Guest names</h4>
+            <label for="guests" class="sr-only">Guest names, one per line</label>
+            <textarea id="guests" placeholder="One name per line, exactly as it should be engraved:&#10;Aunt Margaret&#10;Mr. &amp; Mrs. Delgado&#10;Jordan Reyes"></textarea>
+            <div class="guest-bar">
+              <span class="hint"><strong id="guest-count">0 names</strong> · one card per name, 10 minimum</span>
+              <label class="hint" style="margin:0">Preview
+                <select id="guest-preview" aria-label="Guest shown in the preview"></select>
+              </label>
+            </div>
+            <span class="opt-title">Name lettering</span>
+            <div class="opts" id="font-opts" style="margin-bottom:14px">
+              <label class="opt"><input type="radio" name="font" value="script" checked><span><span class="font-script">Aunt Margaret</span><small>Script</small></span></label>
+              <label class="opt"><input type="radio" name="font" value="serif"><span><span class="font-serif">Aunt Margaret</span><small>Classic serif</small></span></label>
+            </div>
+          </div>
+
+          <h4 class="sub" style="margin-top:10px">Describe your style to AI</h4>
+          <label class="sr-only" for="style">Style</label>
+          <textarea id="style" placeholder="Elegant script with a thin double border and small roses in the corners..."></textarea>
+          <div class="tags" id="style-chips" style="margin:10px 0 18px">
+            <button type="button" class="tag" style="cursor:pointer">Elegant with a fine border</button>
+            <button type="button" class="tag" style="cursor:pointer">Floral corners</button>
+            <button type="button" class="tag" style="cursor:pointer">Rustic with wildflowers</button>
+            <button type="button" class="tag" style="cursor:pointer">Modern minimal</button>
+            <button type="button" class="tag" style="cursor:pointer">Art deco frame</button>
+          </div>
+          <button type="button" class="btn btn-dark" id="generate">&#10024; Create my design</button>
+          <div class="msg" id="ai-msg" role="status"></div>
+          <div class="metal-card mini-preview" id="front-mini-ai" data-mini="front" data-finish="black" hidden><div class="placeholder"></div></div>
+          <p class="hint mini-note" id="front-mini-note" hidden><strong>Check every letter and number.</strong> AI can misspell.</p>
+
+          <div class="revise" id="revise">
+            <label>Want changes? Tell the designer what to fix
+              <input id="revision" placeholder="Make the border thinner and add a small heart at the top">
+            </label>
+            <div class="btn-row">
+              <button type="button" class="btn btn-outline" id="apply-revision">Update design</button>
+              <button type="button" class="btn btn-outline" id="new-design">Try a new layout</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel" data-panel="upload">
+          <h3>Upload your artwork</h3>
+          <p class="hint" style="font-size:.95rem">PNG, JPG, SVG or PDF, up to 5 MB. Black-and-white artwork or a vector file (SVG/PDF) engraves best. We'll check it and contact you if anything needs adjusting before we engrave.</p>
+          <p class="msg show err" id="upload-guest-note" hidden style="margin:0 0 14px">An uploaded design is engraved the same on every card. For a guest's name on each card, use <strong>Design with AI</strong>.</p>
+          <label class="dropzone" id="dropzone">
+            <input type="file" id="file" accept=".png,.jpg,.jpeg,.svg,.pdf" class="sr-only">
+            <strong>Click to choose a file</strong><br>or drag it here
+            <div id="file-name" style="margin-top:8px"></div>
+          </label>
+          <div class="metal-card mini-preview" id="front-mini-upload" data-mini="front" data-finish="black" hidden><div class="placeholder"></div></div>
+          <label style="margin-top:16px">Couple's names <span class="hint">(so we can match your order)</span>
+            <input id="upload-name" placeholder="Mr. &amp; Mrs. Jones">
+          </label>
+        </div>
+
+        <hr style="border:0;border-top:1px solid var(--line);margin:30px 0">
+
+        <h3>2. Back of the card</h3>
+        <p class="hint" style="font-size:.95rem;margin-top:-4px">An engraved back is <strong id="back-price">75% off</strong> the front price per card. Most wedding cards leave it blank; a QR code to your photo album is a fun extra.</p>
+        <div class="opts back-opts" id="back-opts">
+          <label class="opt"><input type="radio" name="back" value="none" checked><span>Blank back<small>Front only</small></span></label>
+          <label class="opt"><input type="radio" name="back" value="ai"><span>QR code + matching design<small>AI designs a back to match your front</small></span></label>
+          <label class="opt"><input type="radio" name="back" value="qr"><span>QR code only<small>Clean layout, ready instantly</small></span></label>
+          <label class="opt"><input type="radio" name="back" value="upload"><span>Upload my own back<small>PNG, JPG, SVG or PDF</small></span></label>
+        </div>
+
+        <div id="back-qr-fields" hidden>
+          <label>QR code link <span class="hint">(your wedding website, shared photo album, registry…)</span>
+            <input id="qr-url" inputmode="url" autocomplete="url" placeholder="photos.google.com/share/...">
+          </label>
+          <label>Headline next to the QR code <span class="hint">(optional)</span>
+            <input id="qr-caption" maxlength="40" placeholder="Share your photos">
+          </label>
+        </div>
+        <div id="back-ai-fields" hidden>
+          <button type="button" class="btn btn-dark" id="generate-back">&#10024; Create my back design</button>
+          <div class="msg" id="back-msg" role="status"></div>
+          <div class="metal-card mini-preview" id="back-mini-ai" data-mini="back" data-finish="black" hidden><div class="placeholder"></div></div>
+          <div class="revise" id="back-revise">
+            <label>Want changes to the back?
+              <input id="back-revision" placeholder="Add a small heart and make the headline bigger">
+            </label>
+            <button type="button" class="btn btn-outline" id="apply-back-revision">Update back</button>
+          </div>
+        </div>
+        <div id="back-upload-fields" hidden>
+          <label class="dropzone" id="back-dropzone">
+            <input type="file" id="back-file" accept=".png,.jpg,.jpeg,.svg,.pdf" class="sr-only">
+            <strong>Choose the back artwork</strong><br>or drag it here
+            <div id="back-file-name" style="margin-top:8px"></div>
+          </label>
+        </div>
+        <div class="metal-card mini-preview" id="back-mini-other" data-mini="back" data-finish="black" hidden><div class="placeholder"></div></div>
+
+        <hr style="border:0;border-top:1px solid var(--line);margin:30px 0">
+
+        <h3>3. Choose your card</h3>
+        <div class="opt-group">
+          <span class="opt-title">Thickness</span>
+          <div class="opts" id="opt-thickness"></div>
+        </div>
+        <div class="opt-group">
+          <span class="opt-title">Finish</span>
+          <div class="opts" id="opt-finish"></div>
+        </div>
+        <div class="opt-group">
+          <span class="opt-title">Quantity</span>
+          <div id="qty-same">
+            <label style="max-width:220px">How many cards
+              <input id="qty-input" type="number" inputmode="numeric" min="10" max="500" step="1" value="50">
+            </label>
+            <p class="hint" style="margin-top:-6px">10 to 500 cards. Save 10% at 50 or more, 20% at 100 or more. Tip: order a few spares.</p>
+          </div>
+          <p id="qty-guest" hidden style="margin:0"><strong id="qty-guest-count">0</strong> cards, one for each guest name. Save 10% at 50 or more, 20% at 100 or more.</p>
+        </div>
+
+        <!-- Phone-only full preview: flip between front and back before ordering. -->
+        <div class="final-preview">
+          <div class="side-tabs" role="tablist">
+            <button type="button" class="active" data-final="front" role="tab">Front</button>
+            <button type="button" data-final="back" role="tab">Back</button>
+          </div>
+          <div class="metal-card" id="final-card" data-finish="black"><div class="placeholder"></div></div>
+          <p class="hint" id="final-note"></p>
+        </div>
+
+        <h3>4. Watch it live <span class="hint">(optional)</span></h3>
+        <label class="check"><input type="checkbox" id="watch-live" checked> Engrave my cards on TikTok Live and give me a shout-out</label>
+        <label>Your TikTok handle <span class="hint">(optional)</span><input id="tiktok" placeholder="@yourhandle"></label>
+        <label>Notes for us <span class="hint">(optional)</span><textarea id="notes" style="min-height:80px" placeholder="Wedding date, when you need them by, anything we should know?"></textarea></label>
+
+        <label>Ship to
+          <select id="ship-to"><option value="US">United States</option></select>
+        </label>
+        <p class="hint" id="ship-note" style="margin:-6px 0 14px"></p>
+
+        <div class="promo-row">
+          <label for="promo" class="sr-only">Promo code</label>
+          <input id="promo" placeholder="Promo code" autocomplete="off" autocapitalize="characters">
+          <button type="button" class="btn btn-outline" id="apply-promo">Apply</button>
+        </div>
+        <div class="msg" id="promo-msg" role="status"></div>
+
+        <div class="total-bar">
+          <div>
+            <div class="amount" id="total">$—</div>
+            <div class="each" id="each">Choose your options</div>
+          </div>
+          <button type="button" class="btn btn-primary" id="checkout">Order &amp; pay securely</button>
+        </div>
+        <div class="msg" id="checkout-msg" role="status"></div>
+        <p class="hint" style="margin-top:12px">Free US shipping on orders of $100 or more (excludes Alaska, Hawaii and Puerto Rico). Shipping address is collected at checkout. Cards ship within 5–7 business days of your order, so order at least 3 weeks before the wedding.</p>
+      </div>
+
+      <!-- right: preview -->
+      <div class="preview-pane">
+        <div class="side-tabs" role="tablist">
+          <button type="button" class="active" data-side="front" role="tab">Front</button>
+          <button type="button" data-side="back" role="tab">Back</button>
+        </div>
+        <div class="metal-card" id="card" data-finish="black">
+          <div class="placeholder" id="placeholder">Your design appears here</div>
+        </div>
+        <div class="preview-note" id="preview-note">The preview shows your design engraved on the metal you pick. Engraving has no color.</div>
+        <div class="card" style="margin-top:20px">
+          <h3 style="font-size:1rem">Good to know</h3>
+          <ul style="margin:0;padding-left:18px;color:var(--muted);font-size:.93rem">
+            <li>Cards are 3.375 × 2.125 in (credit-card size) stainless steel, sized to sit on a plate or a folded napkin.</li>
+            <li>Guest names are engraved exactly as you type them. Use the Preview list to check each one.</li>
+            <li>Check every letter and number in the preview before ordering. AI can misspell.</li>
+            <li>Engraving is one color: designs are previewed and made in black, white and gray.</li>
+            <li>We review every design before engraving and will reach out if something won't engrave cleanly.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <script src="/js/site.js"></script>
+  <script src="/js/card-designer.js"></script>
+</body>
+</html>
