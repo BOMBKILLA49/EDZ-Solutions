@@ -183,6 +183,12 @@ textarea { min-height: 110px; resize: vertical; }
 @media (max-width: 860px) { .split { grid-template-columns: 1fr; } }
 
 /* live */
+/* Homepage TikTok section: the laser + TikTok photo behind everything, darkened so the
+   text stays readable, with frosted cards on top. */
+.section.live-section { background: linear-gradient(90deg, rgba(5,7,12,.92) 0%, rgba(5,7,12,.8) 45%, rgba(5,7,12,.55) 100%), url("/img/live-showcase.jpg") center / cover no-repeat, var(--ink); }
+.live-section .lead { color: #cbd5e1; }
+.live-section .card { background: rgba(15,23,42,.72); border-color: rgba(255,255,255,.12); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+@media (max-width: 700px) { .section.live-section { background: linear-gradient(rgba(5,7,12,.86), rgba(5,7,12,.86)), url("/img/live-showcase-800.jpg") center / cover no-repeat, var(--ink); } }
 .live-pill { display: inline-flex; align-items: center; gap: 8px; background: #ef4444; color: #fff; font-weight: 800; font-size: .8rem; letter-spacing: .1em; padding: 6px 12px; border-radius: 99px; }
 .live-pill::before { content: ""; width: 8px; height: 8px; background: #fff; border-radius: 50%; animation: pulse 1.4s infinite; }
 @keyframes pulse { 50% { opacity: .3; } }
