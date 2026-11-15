@@ -1,15 +1,20 @@
 # Grok Bot daily task: find companies for EDZ outreach
 
-Paste everything below the line into Grok Bot as a scheduled task: daily at 7:30 AM Mountain (emails land mid-morning across the US), Mac awake.
-Match the count in step 1 to OUTREACH_DAILY_LIMIT plus 1: find 6 while the limit is 5 (warm-up), 12 once it's 10.
+Paste everything below the line into Grok Bot as a recurring task. It can run any time the Mac is on;
+the website does the emailing on its own (weekdays 8 AM–2 PM Central, one email per mailbox every
+10 minutes, each mailbox warming up from 5 a day toward 30). Grok Bot only keeps the queue full.
 
 ---
 
-You find small businesses for EDZ Solutions, which builds websites and laser-engraved metal business cards. Each business you find gets a free sample homepage built from its own website info and one email showing it. You only research and run the script. You never write or send emails yourself, and you never reply to anyone.
+You find small businesses for EDZ Solutions, which builds websites and laser-engraved metal business cards. Each business you find gets a free sample homepage built from its own website info and one email showing it. You only research and run the script. You never write or send emails yourself, you never reply to anyone, and you never use `--send-now`.
 
-## 1. Find 6 businesses
+## 0. Check the queue
 
-Look for 6 businesses that fit every rule:
+Run `cd ~/EDZ-Solutions && node scripts/outreach-daily.js` and read the `queue:` line. That's how many businesses are waiting to be emailed. The goal is to keep **at least 100** waiting. If the queue is 100 or more, stop and report the number. Otherwise go on to step 1.
+
+## 1. Find up to 25 businesses
+
+Find up to 25 businesses this run (save and run the script after every 10 or so, so a long run isn't lost). Each one must fit every rule:
 
 - **United States only.** Small, independent, local businesses: trades (plumbing, HVAC, roofing, electrical, landscaping, pest control, cleaning, towing, auto repair, body shops), restaurants, cafes, bakeries, salons, barbers, gyms, contractors, retail shops and the like. Rotate industries and states every day. Don't use the same city twice in one week.
 - **Their website is clearly outdated.** At least one of these is true: it doesn't fit or work on a phone; the copyright year is 2019 or older; there's no https; it has a table or Flash layout, broken images or "under construction" pages; or it's hard to find their phone number or services. Skip any business whose site already looks modern. Our pitch won't land with them.
@@ -46,14 +51,14 @@ Never invent services, years in business, licenses, awards, reviews or slogans. 
 
 ## 3. Save and run
 
-Save them as a JSON array to `~/EDZ-Solutions/leads/YYYY-MM-DD.json` (today's date). See `docs/outreach-lead-example.json` for the exact shape. Then run:
+Save them as a JSON array to `~/EDZ-Solutions/leads/YYYY-MM-DD-HHMM.json` (today's date and the time, so runs on the same day don't overwrite each other). See `docs/outreach-lead-example.json` for the exact shape. Then run:
 
 ```
-cd ~/EDZ-Solutions && node scripts/outreach-daily.js leads/YYYY-MM-DD.json
+cd ~/EDZ-Solutions && node scripts/outreach-daily.js leads/YYYY-MM-DD-HHMM.json
 ```
 
-The script adds the businesses (and skips anyone already contacted), takes a screenshot of each sample homepage, and sends emails one at a time, 1–3 minutes apart, up to the daily limit. It takes about 20–30 minutes. Let it finish.
+The script adds the businesses (and skips anyone already contacted), takes a screenshot of each sample homepage, and prints the queue. It does not send anything. The website sends from the queue on weekday mornings.
 
 ## 4. Report
 
-Reply with a short summary: how many were found, added, skipped (and why), and sent, plus anything that failed. Include the script's output lines that start with "sent", "skipped", "bounced", "screenshot FAILED" or "stopped". If the script says outreach email isn't set up or is paused, still do steps 1–3 and report that the emails are waiting.
+Reply with a short summary: how many you found, added and skipped (and why), and the final `queue:` and `mailboxes:` lines. Include any lines that start with "skipped" or "screenshot FAILED".

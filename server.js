@@ -1027,7 +1027,7 @@ app.post("/api/admin/prospects", requireAdmin, async (req, res) => {
 app.get("/api/admin/prospects", requireAdmin, async (req, res) => {
   const status = PROSPECT_STATUSES.includes(req.query.status) ? req.query.status : null;
   const { rows } = await pool.query(
-    `SELECT id, created_at, slug, email, domain, status, data, sent_at, views, last_view_at, notes, shot IS NOT NULL AS has_shot
+    `SELECT id, created_at, slug, email, domain, status, data, sent_at, sent_from, views, last_view_at, notes, shot IS NOT NULL AS has_shot
      FROM prospects ${status ? "WHERE status=$1" : ""} ORDER BY created_at DESC LIMIT 500`,
     status ? [status] : []
   );
@@ -1039,6 +1039,9 @@ app.get("/api/admin/prospects", requireAdmin, async (req, res) => {
     sentLast24h: sent24.rows[0].n,
     dailyLimit: outreach.settings().dailyLimit,
     notReady: outreach.notReady(),
+    mailboxes: await outreach.mailboxStats(pool),
+    queue: (await pool.query("SELECT count(*)::int AS n FROM prospects WHERE status IN ('new','ready')")).rows[0].n,
+    sendingNow: outreach.inWindow(),
   });
 });
 
@@ -1075,33 +1078,10 @@ app.post("/api/admin/prospects/:id/status", requireAdmin, async (req, res) => {
   res.json({ ok: true });
 });
 
-// Sends ONE email to the oldest ready prospect, so the caller can space sends out
-// (and no request runs into Heroku's 30 s limit). Stops at OUTREACH_DAILY_LIMIT per 24 h.
+// Sends ONE email right now (ignores the weekday window; the timer below respects it).
 app.post("/api/admin/outreach/send-next", requireAdmin, async (req, res) => {
-  const why = outreach.notReady();
-  if (why) return res.json({ done: true, reason: why });
-  const { dailyLimit } = outreach.settings();
-  const sent24 = (await pool.query("SELECT count(*)::int AS n FROM prospects WHERE sent_at > now() - interval '24 hours'")).rows[0].n;
-  if (sent24 >= dailyLimit) return res.json({ done: true, reason: `Daily limit reached (${sent24}/${dailyLimit} in the last 24 hours).` });
-  const { rows } = await pool.query(
-    `UPDATE prospects SET status='sending' WHERE id = (
-       SELECT id FROM prospects WHERE status='ready' ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED
-     ) RETURNING *`
-  );
-  const p = rows[0];
-  if (!p) return res.json({ done: true, reason: "No prospects are ready to email." });
-  try {
-    await outreach.sendEmail(p, SITE_URL);
-    await pool.query("UPDATE prospects SET status='sent', sent_at=now() WHERE id=$1", [p.id]);
-    res.json({ sent: { business: p.data.business, email: p.email, preview: `${SITE_URL}/p/${p.slug}` }, sentLast24h: sent24 + 1, dailyLimit });
-  } catch (err) {
-    // 5xx about the recipient (no such mailbox, rejected) → never retry that address.
-    const bounced = err.responseCode >= 550 && /recipient|mailbox|user|address|rejected/i.test(String(err.response || err.message));
-    await pool.query("UPDATE prospects SET status=$2, notes=$3 WHERE id=$1", [p.id, bounced ? "bounced" : "ready", String(err.response || err.message).slice(0, 300)]);
-    console.error("outreach send failed:", err);
-    if (bounced) return res.json({ bounced: { business: p.data.business, email: p.email } });
-    res.status(502).json({ error: `Sending failed: ${err.message}` });
-  }
+  const out = await outreach.sendNext(pool, SITE_URL);
+  res.status(out.error ? 502 : 200).json(out);
 });
 
 // Public sample homepage. ?shot=1 hides the EDZ banner for the screenshot; ?shot / ?admin views aren't counted.
@@ -1162,7 +1142,11 @@ app.post("/u/:token", express.urlencoded({ extended: false }), async (req, res) 
 });
 
 migrate()
-  .then(() => app.listen(PORT, () => console.log(`EDZ Solutions running on ${SITE_URL}`)))
+  .then(() => {
+    app.listen(PORT, () => console.log(`EDZ Solutions running on ${SITE_URL}`));
+    // Outreach sends on weekdays inside OUTREACH_WINDOW, one email per mailbox every 10 minutes.
+    setInterval(() => outreach.tick(pool, SITE_URL).catch((e) => console.error("outreach tick failed:", e)), 10 * 60 * 1000);
+  })
   .catch((err) => {
     console.error("database setup failed:", err);
     process.exit(1);

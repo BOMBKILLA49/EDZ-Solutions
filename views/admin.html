@@ -246,7 +246,9 @@
     async function loadOutreach() {
       const out = await (await fetch(`/api/admin/prospects${ofilter ? `?status=${ofilter}` : ""}`)).json();
       document.getElementById("outreach-stats").innerHTML =
-        `${out.sentLast24h} of ${out.dailyLimit} emails sent in the last 24 hours.` +
+        `${out.sentLast24h} of ${out.dailyLimit} emails sent in the last 24 hours · ${out.queue} waiting to be emailed · ` +
+        (out.sendingNow ? "sending now (weekday window)" : "outside the weekday sending window") +
+        `<br>Mailboxes: ${out.mailboxes.map((m) => `${esc(m.user)} ${m.sent24}/${m.limit}`).join(" · ") || "none"}<br>` +
         (out.notReady ? ` <strong style="color:var(--err)">${esc(out.notReady)}</strong>` : "") +
         ` A sample homepage opened by the prospect counts as a view (link scanners can add a few).`;
       document.getElementById("outreach-filters").innerHTML = [["", "All"], ...Object.entries(OSTATUS)]
@@ -260,7 +262,7 @@
                 <div class="meta">${esc(p.email)} · <a href="${esc(d.website)}" target="_blank" rel="noopener">${esc(p.domain)}</a></div>
                 ${p.notes ? `<div class="meta" style="color:var(--err)">${esc(p.notes)}</div>` : ""}</td>
               <td><span class="pill ${OPILL[p.status] || ""}" style="${OPILL[p.status] ? "" : "background:var(--bg-soft);color:var(--muted)"}">${OSTATUS[p.status] || p.status}</span></td>
-              <td class="meta">${when(p.sent_at) || "—"}</td>
+              <td class="meta">${when(p.sent_at) || "—"}${p.sent_from ? `<div>${esc(p.sent_from.split("@")[1])}</div>` : ""}</td>
               <td class="${p.views ? "hot" : "meta"}">${p.views || 0}${p.last_view_at ? `<div class="meta" style="font-weight:400">${when(p.last_view_at)}</div>` : ""}</td>
               <td><div class="acts">
                 <a href="/p/${p.slug}?admin=1" target="_blank">Homepage</a>

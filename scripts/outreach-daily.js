@@ -1,8 +1,9 @@
 #!/usr/bin/env node
-// Daily outreach run (Grok Bot runs this; you can too):
-//   node scripts/outreach-daily.js leads/2026-11-16.json   add leads, screenshot their sample homepages, send today's emails
-//   node scripts/outreach-daily.js --no-send leads/x.json  add + screenshot only
-//   node scripts/outreach-daily.js                          just screenshot anything pending and send
+// Outreach research run (Grok Bot runs this; you can too):
+//   node scripts/outreach-daily.js leads/2026-11-16.json    add leads and screenshot their sample homepages
+//   node scripts/outreach-daily.js                           screenshot anything pending, show the queue
+//   node scripts/outreach-daily.js --send-now leads/x.json   also send right away (normally the site sends
+//                                                            on its own: weekdays, 8 AM–2 PM Central)
 //
 // Talks to the live site (EDZ_URL, default https://www.edzsolutions.com) with the /admin
 // password from ~/.config/edz/admin_password. Screenshots use the Google Chrome on this Mac.
@@ -16,7 +17,7 @@ const SITE = (process.env.EDZ_URL || "https://www.edzsolutions.com").replace(/\/
 const PASSWORD = (process.env.EDZ_ADMIN_PASSWORD || readFile(path.join(os.homedir(), ".config/edz/admin_password"))).trim();
 const CHROME = process.env.CHROME_PATH || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const args = process.argv.slice(2);
-const noSend = args.includes("--no-send");
+const sendNow = args.includes("--send-now");
 const leadFiles = args.filter((a) => !a.startsWith("--"));
 
 function readFile(f) {
@@ -83,7 +84,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     }
   }
 
-  if (noSend) return console.log("--no-send: not emailing.");
+  const status = await api("GET", "/api/admin/prospects?status=ready");
+  console.log(`queue: ${status.queue} waiting to be emailed`);
+  console.log(`mailboxes: ${status.mailboxes.map((m) => `${m.user} ${m.sent24}/${m.limit}`).join(", ")}`);
+  if (!sendNow) return console.log("not sending: the site emails the queue on its own on weekdays.");
 
   // 3. Send one at a time, 1–3 minutes apart (bursts look like spam), until the daily limit.
   let sent = 0;
@@ -91,12 +95,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const out = await api("POST", "/api/admin/outreach/send-next");
     if (out.sent) {
       sent++;
-      console.log(`sent ${out.sent.email} (${out.sent.business}) ${out.sent.preview}  [${out.sentLast24h}/${out.dailyLimit} today]`);
+      console.log(`sent ${out.sent.email} (${out.sent.business}) from ${out.sent.from} ${out.sent.preview}  [${out.sentLast24h}/${out.dailyLimit} today]`);
     } else if (out.bounced) {
       console.log(`bounced, won't retry: ${out.bounced.email} (${out.bounced.business})`);
       continue;
     } else {
-      console.log(`stopped: ${out.reason}`);
+      console.log(`stopped: ${out.reason || out.error}`);
       break;
     }
     await sleep(60000 + Math.random() * 120000);
