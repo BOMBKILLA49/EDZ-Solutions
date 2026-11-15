@@ -11,6 +11,9 @@ const { sendAlert } = require("./lib/mailer");
 const cardback = require("./lib/cardback");
 const { withDpi, imageMime, normalizeUrl } = cardback;
 const { ZipWriter } = require("./lib/zip");
+const sharp = require("sharp");
+const { renderPreview, safeUrl, hexColor } = require("./lib/preview");
+const outreach = require("./lib/outreach");
 
 const PORT = process.env.PORT || 3000;
 const SITE_URL = (process.env.SITE_URL || `http://localhost:${PORT}`).replace(/\/$/, "");
@@ -657,6 +660,7 @@ app.post("/api/plan-checkout", async (req, res) => {
     contactName: clean(b.contactName, 120),
     contactEmail: clean(b.contactEmail, 120),
     contactPhone: clean(b.contactPhone, 40),
+    previewSlug: /^[a-z0-9-]{3,90}$/.test(b.previewSlug || "") ? b.previewSlug : null,
   };
   if (!data.business) return res.status(400).json({ error: "Add your business name." });
   if (!data.contactName || !/^\S+@\S+\.\S+$/.test(data.contactEmail)) return res.status(400).json({ error: "Add your name and a valid email so we can reach you." });
@@ -727,6 +731,9 @@ async function markProjectPaid(sessionId) {
      WHERE stripe_session=$1 AND status='pending_payment' RETURNING *`,
     [sessionId, session.subscription || null, session.customer || null, cust.email || null, cust.name || null]
   );
+  if (rows[0]?.data?.previewSlug) {
+    await pool.query("UPDATE prospects SET status='won' WHERE slug=$1", [rows[0].data.previewSlug]).catch((e) => console.error("prospect won update failed:", e));
+  }
   if (rows[0]) await sendProjectAlert(rows[0]).catch((e) => console.error("project alert failed:", e));
   return rows[0] || null;
 }
@@ -752,6 +759,7 @@ async function sendProjectAlert(p) {
     `On the site — phone: ${d.phone || "-"} · email: ${d.email || "-"} · address: ${d.address || "-"}`,
     d.hours ? `Hours: ${d.hours}` : null,
     d.notes ? `Notes: ${d.notes}` : null,
+    d.previewSlug ? `Started from our sample homepage: ${SITE_URL}/p/${d.previewSlug}?admin=1 (build from this)` : null,
     ``,
     `Contact: ${d.contactName} · ${d.contactEmail} · ${d.contactPhone || ""}`,
     `Logo: ${p.logo_name ? `${p.logo_name} (attached)` : "none uploaded"}`,
@@ -936,6 +944,219 @@ app.post("/api/admin/projects/:id/status", requireAdmin, async (req, res) => {
   if (!["new", "in_progress", "launched", "canceled"].includes(status)) return res.status(400).json({ error: "Bad status" });
   await pool.query("UPDATE projects SET status=$2 WHERE id=$1 AND status <> 'pending_payment'", [req.params.id, status]);
   res.json({ ok: true });
+});
+
+// ---------- outreach: sample homepages Grok Bot's prospects get emailed ----------
+
+const PROSPECT_STATUSES = ["new", "ready", "sending", "sent", "replied", "won", "unsubscribed", "bounced", "skipped"];
+
+function slugify(v) {
+  return String(v || "").toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
+}
+
+function siteDomain(url) {
+  try {
+    return new URL(/^https?:\/\//i.test(url) ? url : `https://${url}`).hostname.replace(/^www\./, "").toLowerCase() || null;
+  } catch {
+    return null;
+  }
+}
+
+// One lead from Grok Bot → the row to insert, or { error }. Only facts from their site are kept.
+function prospectFromLead(lead) {
+  const l = lead || {};
+  const email = clean(l.email, 120).toLowerCase();
+  const data = {
+    business: clean(l.business, 100),
+    contactName: clean(l.contactName, 80),
+    industry: clean(l.industry, 60),
+    city: clean(l.city, 60),
+    state: clean(l.state, 30),
+    area: clean(l.area, 160),
+    phone: clean(l.phone, 30),
+    email,
+    address: clean(l.address, 200),
+    hours: String(l.hours || "").replace(/[\u0000-\u0009\u000b-\u001f]/g, " ").trim().slice(0, 300),
+    tagline: clean(l.tagline, 110),
+    about: String(l.about || "").replace(/[\u0000-\u0009\u000b-\u001f]/g, " ").trim().slice(0, 1200),
+    services: (Array.isArray(l.services) ? l.services : [])
+      .map((x) => (typeof x === "string" ? { name: clean(x, 60) } : { name: clean(x?.name, 60), desc: clean(x?.desc, 220) }))
+      .filter((x) => x.name)
+      .slice(0, 9),
+    website: clean(l.website, 200),
+    logoUrl: safeUrl(l.logoUrl),
+    photoUrls: (Array.isArray(l.photoUrls) ? l.photoUrls : []).map(safeUrl).filter(Boolean).slice(0, 6),
+    color: hexColor(l.color, ""),
+    hook: clean(l.hook, 200),
+    whyOutdated: clean(l.whyOutdated, 300),
+    source: clean(l.source, 200),
+  };
+  if (!data.business) return { error: "no business name" };
+  if (!/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(email)) return { error: "no valid email" };
+  const domain = siteDomain(data.website);
+  if (!domain) return { error: "no website" };
+  const slug = `${slugify(`${data.business} ${data.city}`)}-${crypto.randomBytes(2).toString("hex")}`;
+  return { slug, email, domain, data };
+}
+
+app.post("/api/admin/prospects", requireAdmin, async (req, res) => {
+  const leads = Array.isArray(req.body) ? req.body : req.body?.prospects;
+  if (!Array.isArray(leads) || !leads.length) return res.status(400).json({ error: "Send an array of prospects." });
+  const added = [];
+  const skipped = [];
+  for (const lead of leads.slice(0, 200)) {
+    const p = prospectFromLead(lead);
+    if (p.error) {
+      skipped.push({ business: lead?.business || "?", reason: p.error });
+      continue;
+    }
+    // The unique indexes on email and website domain mean nobody is ever added (or emailed) twice.
+    const { rows } = await pool.query(
+      `INSERT INTO prospects (id, slug, email, domain, data, unsub_token) VALUES ($1,$2,$3,$4,$5,$6)
+       ON CONFLICT DO NOTHING RETURNING id, slug`,
+      [crypto.randomUUID(), p.slug, p.email, p.domain, p.data, crypto.randomBytes(16).toString("hex")]
+    );
+    if (rows[0]) added.push({ id: rows[0].id, slug: rows[0].slug, business: p.data.business });
+    else skipped.push({ business: p.data.business, reason: "already in the list (same email or website)" });
+  }
+  res.json({ added, skipped });
+});
+
+app.get("/api/admin/prospects", requireAdmin, async (req, res) => {
+  const status = PROSPECT_STATUSES.includes(req.query.status) ? req.query.status : null;
+  const { rows } = await pool.query(
+    `SELECT id, created_at, slug, email, domain, status, data, sent_at, views, last_view_at, notes, shot IS NOT NULL AS has_shot
+     FROM prospects ${status ? "WHERE status=$1" : ""} ORDER BY created_at DESC LIMIT 500`,
+    status ? [status] : []
+  );
+  const counts = await pool.query("SELECT status, count(*)::int AS n FROM prospects GROUP BY status");
+  const sent24 = await pool.query("SELECT count(*)::int AS n FROM prospects WHERE sent_at > now() - interval '24 hours'");
+  res.json({
+    prospects: rows,
+    counts: Object.fromEntries(counts.rows.map((r) => [r.status, r.n])),
+    sentLast24h: sent24.rows[0].n,
+    dailyLimit: outreach.settings().dailyLimit,
+    notReady: outreach.notReady(),
+  });
+});
+
+// Screenshot of the sample homepage (taken by scripts/outreach-daily.js with headless Chrome).
+app.post("/api/admin/prospects/:id/shot", requireAdmin, express.raw({ type: "image/*", limit: "15mb" }), async (req, res) => {
+  if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: "Send the PNG as the body." });
+  try {
+    const img = sharp(req.body).resize({ width: 1088 });
+    const { data, info } = await img.toBuffer({ resolveWithObject: true });
+    const jpg = await sharp(data).extract({ left: 0, top: 0, width: info.width, height: Math.min(info.height, 1300) }).jpeg({ quality: 78, mozjpeg: true }).toBuffer();
+    const { rowCount } = await pool.query(
+      "UPDATE prospects SET shot=$2, status=CASE WHEN status='new' THEN 'ready' ELSE status END WHERE id=$1",
+      [req.params.id, jpg]
+    );
+    if (!rowCount) return res.status(404).json({ error: "No such prospect." });
+    res.json({ ok: true, bytes: jpg.length });
+  } catch (err) {
+    console.error("prospect shot error:", err);
+    res.status(400).json({ error: "Couldn't read that image." });
+  }
+});
+
+app.get("/api/admin/prospects/:id/email", requireAdmin, async (req, res) => {
+  const { rows } = await pool.query("SELECT * FROM prospects WHERE id=$1", [req.params.id]).catch(() => ({ rows: [] }));
+  if (!rows[0]) return res.status(404).send("No such prospect.");
+  const email = outreach.buildEmail(rows[0], SITE_URL);
+  res.type("html").send(req.query.text ? `<pre>${escapeHtml(email.text)}</pre>` : email.html);
+});
+
+app.post("/api/admin/prospects/:id/status", requireAdmin, async (req, res) => {
+  const status = String(req.body.status || "");
+  if (!PROSPECT_STATUSES.includes(status) || status === "sending") return res.status(400).json({ error: "Bad status" });
+  await pool.query("UPDATE prospects SET status=$2, notes=COALESCE($3, notes) WHERE id=$1", [req.params.id, status, req.body.notes ?? null]);
+  res.json({ ok: true });
+});
+
+// Sends ONE email to the oldest ready prospect, so the caller can space sends out
+// (and no request runs into Heroku's 30 s limit). Stops at OUTREACH_DAILY_LIMIT per 24 h.
+app.post("/api/admin/outreach/send-next", requireAdmin, async (req, res) => {
+  const why = outreach.notReady();
+  if (why) return res.json({ done: true, reason: why });
+  const { dailyLimit } = outreach.settings();
+  const sent24 = (await pool.query("SELECT count(*)::int AS n FROM prospects WHERE sent_at > now() - interval '24 hours'")).rows[0].n;
+  if (sent24 >= dailyLimit) return res.json({ done: true, reason: `Daily limit reached (${sent24}/${dailyLimit} in the last 24 hours).` });
+  const { rows } = await pool.query(
+    `UPDATE prospects SET status='sending' WHERE id = (
+       SELECT id FROM prospects WHERE status='ready' ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED
+     ) RETURNING *`
+  );
+  const p = rows[0];
+  if (!p) return res.json({ done: true, reason: "No prospects are ready to email." });
+  try {
+    await outreach.sendEmail(p, SITE_URL);
+    await pool.query("UPDATE prospects SET status='sent', sent_at=now() WHERE id=$1", [p.id]);
+    res.json({ sent: { business: p.data.business, email: p.email, preview: `${SITE_URL}/p/${p.slug}` }, sentLast24h: sent24 + 1, dailyLimit });
+  } catch (err) {
+    // 5xx about the recipient (no such mailbox, rejected) → never retry that address.
+    const bounced = err.responseCode >= 550 && /recipient|mailbox|user|address|rejected/i.test(String(err.response || err.message));
+    await pool.query("UPDATE prospects SET status=$2, notes=$3 WHERE id=$1", [p.id, bounced ? "bounced" : "ready", String(err.response || err.message).slice(0, 300)]);
+    console.error("outreach send failed:", err);
+    if (bounced) return res.json({ bounced: { business: p.data.business, email: p.email } });
+    res.status(502).json({ error: `Sending failed: ${err.message}` });
+  }
+});
+
+// Public sample homepage. ?shot=1 hides the EDZ banner for the screenshot; ?shot / ?admin views aren't counted.
+app.get("/p/:slug", async (req, res) => {
+  const { rows } = await pool.query("SELECT id, slug, data FROM prospects WHERE slug=$1", [req.params.slug]).catch(() => ({ rows: [] }));
+  if (!rows[0]) return res.status(404).sendFile(path.join(__dirname, "public", "index.html"));
+  const shot = req.query.shot === "1";
+  if (!shot && !req.query.admin && !/bot|crawl|spider|preview|scan|fetch/i.test(req.headers["user-agent"] || "")) {
+    pool.query("UPDATE prospects SET views=views+1, last_view_at=now() WHERE id=$1", [rows[0].id]).catch(() => {});
+  }
+  res.set("X-Robots-Tag", "noindex").type("html").send(renderPreview(rows[0], { shot, claimUrl: `/start?plan=launch&preview=${rows[0].slug}` }));
+});
+
+app.get("/p/:slug/shot.jpg", async (req, res) => {
+  const { rows } = await pool.query("SELECT shot FROM prospects WHERE slug=$1", [req.params.slug]).catch(() => ({ rows: [] }));
+  if (!rows[0]?.shot) return res.status(404).end();
+  res.set({ "Content-Type": "image/jpeg", "Cache-Control": "public, max-age=86400" }).send(rows[0].shot);
+});
+
+// Prefills /start when someone claims their sample homepage.
+app.get("/api/preview-info/:slug", async (req, res) => {
+  const { rows } = await pool.query("SELECT data FROM prospects WHERE slug=$1", [req.params.slug]).catch(() => ({ rows: [] }));
+  if (!rows[0]) return res.status(404).json({ error: "Not found" });
+  const d = rows[0].data;
+  res.json({
+    business: d.business,
+    industry: d.industry,
+    description: d.about,
+    services: (d.services || []).map((s) => s.name).join("\n"),
+    area: d.area || [d.city, d.state].filter(Boolean).join(", "),
+    phone: d.phone,
+    email: d.email,
+    address: d.address,
+    hours: d.hours,
+    domain: d.website ? siteDomain(d.website) : "",
+    contactName: d.contactName,
+    contactEmail: d.email,
+  });
+});
+
+function unsubPage(title, body) {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>${title} | EDZ Solutions</title><link rel="stylesheet" href="/css/site.css"></head>
+<body style="background:var(--bg-soft)"><main class="wrap" style="max-width:560px;padding:80px 20px;text-align:center"><img src="/img/edz-logo.png" alt="EDZ Solutions" style="max-width:220px;margin:0 auto 28px;display:block"><h1 style="font-size:1.7rem">${title}</h1>${body}</main></body></html>`;
+}
+
+app.get("/u/:token", async (req, res) => {
+  const { rows } = await pool.query("SELECT email, status FROM prospects WHERE unsub_token=$1", [req.params.token]).catch(() => ({ rows: [] }));
+  if (!rows[0]) return res.status(404).send(unsubPage("Link not found", "<p>This unsubscribe link isn't valid. Reply to the email with \"unsubscribe\" and we'll remove you.</p>"));
+  if (rows[0].status === "unsubscribed") return res.send(unsubPage("You're unsubscribed", `<p>We won't email ${escapeHtml(rows[0].email)} again.</p>`));
+  res.send(unsubPage("Unsubscribe", `<p>Stop all emails from EDZ Solutions to <strong>${escapeHtml(rows[0].email)}</strong>?</p><form method="post"><button class="btn" type="submit">Unsubscribe</button></form>`));
+});
+
+// The form above and mail apps' one-click List-Unsubscribe both POST here.
+app.post("/u/:token", express.urlencoded({ extended: false }), async (req, res) => {
+  const { rows } = await pool.query("UPDATE prospects SET status='unsubscribed' WHERE unsub_token=$1 RETURNING email", [req.params.token]).catch(() => ({ rows: [] }));
+  if (!rows[0]) return res.status(404).send(unsubPage("Link not found", "<p>This unsubscribe link isn't valid. Reply to the email with \"unsubscribe\" and we'll remove you.</p>"));
+  res.send(unsubPage("You're unsubscribed", `<p>We won't email ${escapeHtml(rows[0].email)} again.</p>`));
 });
 
 migrate()

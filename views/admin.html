@@ -42,6 +42,11 @@
     .promos th { font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
     .promos code { font-weight: 700; color: var(--ink); }
     .promos tr.off td { opacity: .5; }
+    #outreach-filters button { border-color: var(--line); color: var(--text); }
+    #outreach-list td { vertical-align: top; }
+    #outreach-list .acts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+    #outreach-list .acts a, #outreach-list .acts button { font: inherit; font-size: .82rem; font-weight: 700; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--line); background: #fff; color: var(--ink); text-decoration: none; cursor: pointer; white-space: nowrap; }
+    .hot { color: #b91c1c; font-weight: 800; }
   </style>
 </head>
 <body>
@@ -57,6 +62,11 @@
     <div id="list"></div>
     <h2 style="margin-top:40px">Website projects</h2>
     <div id="projects"></div>
+
+    <h2 style="margin-top:40px" id="outreach">Outreach</h2>
+    <p class="meta" id="outreach-stats" style="margin-top:-6px"></p>
+    <div class="filters" id="outreach-filters" style="margin-bottom:14px"></div>
+    <div class="card" style="padding:0;overflow-x:auto"><table class="promos" style="margin:0"><thead><tr><th>Business</th><th>Status</th><th>Sent</th><th>Views</th><th></th></tr></thead><tbody id="outreach-list"></tbody></table></div>
 
     <h2 style="margin-top:40px">Promo codes</h2>
     <div class="card">
@@ -227,6 +237,59 @@
         body: JSON.stringify({ status: b.dataset.pstatus }),
       });
       loadProjects();
+      loadOutreach();
+    });
+
+    const OSTATUS = { new: "Needs screenshot", ready: "Ready", sending: "Sending", sent: "Sent", replied: "Replied", won: "Won", unsubscribed: "Unsubscribed", bounced: "Bounced", skipped: "Skipped" };
+    const OPILL = { ready: "paid", sent: "engraved", replied: "live", won: "shipped" };
+    let ofilter = "";
+    async function loadOutreach() {
+      const out = await (await fetch(`/api/admin/prospects${ofilter ? `?status=${ofilter}` : ""}`)).json();
+      document.getElementById("outreach-stats").innerHTML =
+        `${out.sentLast24h} of ${out.dailyLimit} emails sent in the last 24 hours.` +
+        (out.notReady ? ` <strong style="color:var(--err)">${esc(out.notReady)}</strong>` : "") +
+        ` A sample homepage opened by the prospect counts as a view (link scanners can add a few).`;
+      document.getElementById("outreach-filters").innerHTML = [["", "All"], ...Object.entries(OSTATUS)]
+        .filter(([k]) => !k || out.counts[k])
+        .map(([k, label]) => `<button data-of="${k}" class="${k === ofilter ? "active" : ""}">${label}${k ? `<span class="count">${out.counts[k]}</span>` : ""}</button>`).join("");
+      document.getElementById("outreach-list").innerHTML = out.prospects.length
+        ? out.prospects.map((p) => {
+            const d = p.data || {};
+            return `<tr>
+              <td><strong>${esc(d.business)}</strong><div class="meta">${esc([d.industry, [d.city, d.state].filter(Boolean).join(", ")].filter(Boolean).join(" · "))}</div>
+                <div class="meta">${esc(p.email)} · <a href="${esc(d.website)}" target="_blank" rel="noopener">${esc(p.domain)}</a></div>
+                ${p.notes ? `<div class="meta" style="color:var(--err)">${esc(p.notes)}</div>` : ""}</td>
+              <td><span class="pill ${OPILL[p.status] || ""}" style="${OPILL[p.status] ? "" : "background:var(--bg-soft);color:var(--muted)"}">${OSTATUS[p.status] || p.status}</span></td>
+              <td class="meta">${when(p.sent_at) || "—"}</td>
+              <td class="${p.views ? "hot" : "meta"}">${p.views || 0}${p.last_view_at ? `<div class="meta" style="font-weight:400">${when(p.last_view_at)}</div>` : ""}</td>
+              <td><div class="acts">
+                <a href="/p/${p.slug}?admin=1" target="_blank">Homepage</a>
+                <a href="/api/admin/prospects/${p.id}/email" target="_blank">Email</a>
+                ${["sent", "ready"].includes(p.status) ? `<button data-pid="${p.id}" data-ost="replied">Replied</button>` : ""}
+                ${["sent", "replied"].includes(p.status) ? `<button data-pid="${p.id}" data-ost="won">Won</button>` : ""}
+                ${["new", "ready"].includes(p.status) ? `<button data-pid="${p.id}" data-ost="skipped">Skip</button>` : ""}
+                ${p.status === "sent" ? `<button data-pid="${p.id}" data-ost="bounced">Bounced</button><button data-pid="${p.id}" data-ost="unsubscribed">Unsub</button>` : ""}
+              </div></td>
+            </tr>`;
+          }).join("")
+        : `<tr><td colspan="5" class="empty" style="padding:24px">No prospects yet. Grok Bot adds them each day.</td></tr>`;
+    }
+    document.getElementById("outreach-filters").addEventListener("click", (e) => {
+      const b = e.target.closest("button[data-of]");
+      if (!b) return;
+      ofilter = b.dataset.of;
+      loadOutreach();
+    });
+    document.getElementById("outreach-list").addEventListener("click", async (e) => {
+      const b = e.target.closest("button[data-pid]");
+      if (!b) return;
+      b.disabled = true;
+      await fetch(`/api/admin/prospects/${b.dataset.pid}/status`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: b.dataset.ost }),
+      });
+      loadOutreach();
     });
 
     async function loadPromos() {

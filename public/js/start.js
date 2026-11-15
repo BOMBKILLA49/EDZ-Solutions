@@ -11,7 +11,23 @@
       : text;
   };
 
-  const wanted = new URLSearchParams(location.search).get("plan");
+  const params = new URLSearchParams(location.search);
+  const wanted = params.get("plan");
+  // Arriving from the sample homepage we emailed: fill in what we already know.
+  const previewSlug = params.get("preview");
+  if (previewSlug) {
+    fetch(`/api/preview-info/${encodeURIComponent(previewSlug)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((info) => {
+        if (!info) return;
+        for (const [name, value] of Object.entries(info)) {
+          const field = document.querySelector(`#project [name="${name}"]`);
+          if (field && value && !field.value) field.value = value;
+        }
+        $("#preview-note").hidden = false;
+        $("#preview-link").href = `/p/${encodeURIComponent(previewSlug)}?admin=1`;
+      });
+  }
   $("#plan").innerHTML = plans.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join("");
   $("#plan").value = plans.some((p) => p.id === wanted) ? wanted : "business";
   $("#feature").innerHTML = powerFeatures.map((f) => `<option value="${f.id}">${esc(f.label)}</option>`).join("");
@@ -24,7 +40,7 @@
     $("#due-today").textContent = money(p.setupCents);
     $("#monthly-start").textContent = `${money(p.monthlyCents)}/mo starts in ${p.trialDays} days, around when your site goes live.`;
     $("#feature-set").hidden = p.id !== "business";
-    history.replaceState(null, "", `?plan=${p.id}`);
+    history.replaceState(null, "", `?plan=${p.id}${previewSlug ? `&preview=${encodeURIComponent(previewSlug)}` : ""}`);
   }
   $("#plan").addEventListener("change", showPlan);
   showPlan();
@@ -48,7 +64,7 @@
     e.preventDefault();
     const form = e.target;
     const btn = $("#pay");
-    const body = { ...Object.fromEntries(new FormData(form)), plan: $("#plan").value, logo };
+    const body = { ...Object.fromEntries(new FormData(form)), plan: $("#plan").value, logo, previewSlug };
     btn.disabled = true;
     btn.textContent = "Starting secure checkout…";
     try {
