@@ -10,7 +10,7 @@ You find small businesses for EDZ Solutions, which builds websites and laser-eng
 
 ## 0. Check the queue
 
-Run `cd ~/EDZ-Solutions && node scripts/outreach-daily.js` and read the `queue:` line. That's how many businesses are waiting to be emailed. The goal is to keep **at least 100** waiting. If the queue is 100 or more, stop and report the number. Otherwise go on to step 1.
+Run `cd ~/EDZ-Solutions && node scripts/outreach-daily.js` and read the `queue:` line. That's how many businesses are waiting to be emailed. The goal is to keep **at least 30** waiting. If the queue is 30 or more, stop and report the number. Otherwise go on to step 1.
 
 ## 1. Get candidates from the lead finder
 
@@ -20,7 +20,7 @@ Look in `~/EDZ-Solutions/leads/` for a `candidates-*.json` file that hasn't been
 cd ~/EDZ-Solutions && node scripts/find-leads.js
 ```
 
-It searches Google's business listings (15 trade + city searches, about 300 businesses), throws out chains, businesses without websites, modern sites and sites with no email, and saves the rest, already filled in with business, industry, city, state, phone, email, address, website and whyOutdated, to a new `candidates-*.json`. It already keeps `checked-domains.txt` up to date.
+It searches Google's business listings (15 trade + city searches, about 300 businesses; it stops itself at 30 searches a day to stay in Google's free tier, so if it says the limit is reached, finish any candidates you have and stop for today), throws out chains, businesses without websites, modern sites and sites with no email, and saves the rest, already filled in with business, industry, city, state, phone, email, address, website and whyOutdated, to a new `candidates-*.json`. It already keeps `checked-domains.txt` up to date.
 
 Work through up to 25 candidates per run. For each one, open their website and decide:
 

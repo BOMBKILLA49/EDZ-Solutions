@@ -32,6 +32,8 @@ const PASSWORD = (process.env.EDZ_ADMIN_PASSWORD || read(path.join(os.homedir(),
 const argv = process.argv.slice(2);
 const SEARCHES = Number(argv[argv.indexOf("--searches") + 1]) || 15;
 const MONTHLY_LIMIT = Number(process.env.PLACES_MONTHLY_LIMIT) || 900;
+// Spreads the month's searches out instead of using them all in the first week.
+const DAILY_LIMIT = Number(process.env.PLACES_DAILY_LIMIT) || 30;
 
 // Trades we pitch (no law, medical, cannabis, firearms, nonprofits, government, schools).
 const TRADES = [
@@ -187,19 +189,23 @@ async function pool(items, n, fn) {
 
   const usageFile = path.join(LEADS, "places-usage.log");
   const month = new Date().toISOString().slice(0, 7);
-  let usedThisMonth = read(usageFile).split("\n").filter((l) => l.startsWith(month)).length;
-  console.log(`Google searches used this month: ${usedThisMonth} of ${MONTHLY_LIMIT}`);
+  const today = new Date().toISOString().slice(0, 10);
+  const usage = read(usageFile).split("\n");
+  let usedThisMonth = usage.filter((l) => l.startsWith(month)).length;
+  let usedToday = usage.filter((l) => l.startsWith(today)).length;
+  console.log(`Google searches used: ${usedToday} of ${DAILY_LIMIT} today, ${usedThisMonth} of ${MONTHLY_LIMIT} this month`);
 
   const candidates = [];
   const tally = {};
   const newDomains = [];
   for (const q of queries) {
-    if (usedThisMonth >= MONTHLY_LIMIT) {
-      console.log(`Stopped: reached ${MONTHLY_LIMIT} Google searches this month (PLACES_MONTHLY_LIMIT).`);
+    if (usedThisMonth >= MONTHLY_LIMIT || usedToday >= DAILY_LIMIT) {
+      console.log(`Stopped: reached the Google search limit (${usedToday}/${DAILY_LIMIT} today, ${usedThisMonth}/${MONTHLY_LIMIT} this month). Try again tomorrow.`);
       break;
     }
     fs.appendFileSync(usageFile, `${new Date().toISOString()} ${q}\n`);
     usedThisMonth++;
+    usedToday++;
     const places = await search(q);
     fs.appendFileSync(searchedFile, `${q}\n`);
     const fresh = [];
