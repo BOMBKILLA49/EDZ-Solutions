@@ -16,7 +16,7 @@ const PLANS = [
       "Your business logo, hours, map and up to 6 photos",
       "Tap-to-call button and email",
       "Mobile-friendly, secure (SSL) hosting included",
-      "We connect your domain",
+      "Free domain name included, or we connect yours",
       "1 revision before launch",
       "1 small text update a month (hours, prices, phone)",
     ],
@@ -34,6 +34,7 @@ const PLANS = [
     features: [
       "Up to 4 unique pages (Home, Services, About & Contact)",
       "Your logo, colors and fonts",
+      "Free domain name included, or we connect yours",
       "Up to 15 photos",
       "Local SEO setup so you show up in search",
       "Contact form sent straight to your email",
@@ -55,6 +56,7 @@ const PLANS = [
     cards: 50,
     features: [
       "Up to 8 pages with more detail on every service",
+      "Free domain name included, or we connect yours",
       "Local SEO pages for the towns and services you want to rank for",
       "Google Business Profile set up and optimized",
       "Google Ads campaign set up (if you want to advertise; ad spend is paid to Google)",

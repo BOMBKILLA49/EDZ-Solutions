@@ -46,7 +46,10 @@
   showPlan();
 
   $("#domain-status").addEventListener("change", (e) => {
-    $("#domain-label").textContent = e.target.value === "need" ? "Domain you'd like (we'll check if it's available)" : "Your domain";
+    const need = e.target.value === "need";
+    $("#domain-label").textContent = need ? "Any names you like? (optional, we'll pick the best one available)" : "Your domain";
+    $("#project [name=domain]").placeholder = need ? "Leave blank and we'll choose" : "yourbusiness.com";
+    $("#domain-free").hidden = !need;
   });
 
   let logo = null;

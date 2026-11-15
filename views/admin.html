@@ -211,7 +211,7 @@
                 ${d.services ? `<dt>Services</dt><dd>${esc(d.services)}</dd>` : ""}
                 ${d.area ? `<dt>Area</dt><dd>${esc(d.area)}</dd>` : ""}
                 ${d.feature ? `<dt>Power feature</dt><dd>${esc(feat[d.feature] || d.feature)}</dd>` : ""}
-                <dt>Domain</dt><dd>${d.domainStatus === "need" ? `<strong>Needs one</strong>${d.domain ? ` (wants ${esc(d.domain)})` : ""}` : esc(d.domain || "—")}</dd>
+                <dt>Domain</dt><dd>${d.domainStatus === "need" ? `<strong>Needs one, free: pick &amp; register it</strong>${d.domain ? ` (their ideas: ${esc(d.domain)})` : ""}` : esc(d.domain || "—")}</dd>
                 <dt>On the site</dt><dd>${esc([d.phone, d.email, d.address].filter(Boolean).join(" · ") || "—")}${d.hours ? `\n${esc(d.hours)}` : ""}</dd>
                 ${d.colors ? `<dt>Colors</dt><dd>${esc(d.colors)}</dd>` : ""}
                 ${d.likes ? `<dt>Sites they like</dt><dd>${esc(d.likes)}</dd>` : ""}

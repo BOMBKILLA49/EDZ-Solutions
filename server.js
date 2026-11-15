@@ -752,7 +752,9 @@ async function sendProjectAlert(p) {
     d.services ? `Services: ${d.services}` : null,
     d.area ? `Service area: ${d.area}` : null,
     feature ? `Power feature: ${feature.label}` : null,
-    `Domain: ${d.domainStatus === "need" ? `NEEDS ONE${d.domain ? ` (wants ${d.domain})` : ""}` : d.domain || "(not given)"}`,
+    d.domainStatus === "need"
+      ? `Domain: NEEDS ONE (free to them) — find the best available name and register it in our Spaceship account${d.domain ? `. Their ideas: ${d.domain}` : ""}`
+      : `Domain: ${d.domain || "(not given)"} — they own it; we'll need its DNS pointed at the site`,
     d.colors ? `Colors: ${d.colors}` : null,
     d.likes ? `Sites they like: ${d.likes}` : null,
     ``,
