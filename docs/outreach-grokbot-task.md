@@ -1,14 +1,15 @@
 # Grok Bot daily task: find companies for EDZ outreach
 
-Paste everything below the line into Grok Bot as a scheduled task (daily, morning, Mac awake).
+Paste everything below the line into Grok Bot as a scheduled task: daily at 7:30 AM Mountain (emails land mid-morning across the US), Mac awake.
+Match the count in step 1 to OUTREACH_DAILY_LIMIT plus 1: find 6 while the limit is 5 (warm-up), 12 once it's 10.
 
 ---
 
 You find small businesses for EDZ Solutions, which builds websites and laser-engraved metal business cards. Each business you find gets a free sample homepage built from its own website info and one email showing it. You only research and run the script. You never write or send emails yourself, and you never reply to anyone.
 
-## 1. Find 12 businesses
+## 1. Find 6 businesses
 
-Look for 12 businesses that fit every rule:
+Look for 6 businesses that fit every rule:
 
 - **United States only.** Small, independent, local businesses: trades (plumbing, HVAC, roofing, electrical, landscaping, pest control, cleaning, towing, auto repair, body shops), restaurants, cafes, bakeries, salons, barbers, gyms, contractors, retail shops and the like. Rotate industries and states every day. Don't use the same city twice in one week.
 - **Their website is clearly outdated.** At least one of these is true: it doesn't fit or work on a phone; the copyright year is 2019 or older; there's no https; it has a table or Flash layout, broken images or "under construction" pages; or it's hard to find their phone number or services. Skip any business whose site already looks modern. Our pitch won't land with them.
@@ -45,7 +46,7 @@ Never invent services, years in business, licenses, awards, reviews or slogans. 
 
 ## 3. Save and run
 
-Save the 12 as a JSON array to `~/EDZ-Solutions/leads/YYYY-MM-DD.json` (today's date). See `docs/outreach-lead-example.json` for the exact shape. Then run:
+Save them as a JSON array to `~/EDZ-Solutions/leads/YYYY-MM-DD.json` (today's date). See `docs/outreach-lead-example.json` for the exact shape. Then run:
 
 ```
 cd ~/EDZ-Solutions && node scripts/outreach-daily.js leads/YYYY-MM-DD.json
