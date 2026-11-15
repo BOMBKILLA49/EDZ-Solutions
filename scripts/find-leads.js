@@ -10,6 +10,8 @@
 //
 // Needs a Google Places API (New) key in ~/.config/edz/google_places_key (or GOOGLE_PLACES_KEY).
 // Cost: each search is one Text Search Enterprise request (1,000 free a month, then $35 per 1,000).
+// Google won't let a free-trial account lower its own daily quota, so this script stops itself at
+// PLACES_MONTHLY_LIMIT searches a calendar month (default 900), counted in leads/places-usage.log.
 
 const fs = require("fs");
 const os = require("os");
@@ -29,6 +31,7 @@ const KEY = (process.env.GOOGLE_PLACES_KEY || read(path.join(os.homedir(), ".con
 const PASSWORD = (process.env.EDZ_ADMIN_PASSWORD || read(path.join(os.homedir(), ".config/edz/admin_password"))).trim();
 const argv = process.argv.slice(2);
 const SEARCHES = Number(argv[argv.indexOf("--searches") + 1]) || 15;
+const MONTHLY_LIMIT = Number(process.env.PLACES_MONTHLY_LIMIT) || 900;
 
 // Trades we pitch (no law, medical, cannabis, firearms, nonprofits, government, schools).
 const TRADES = [
@@ -43,7 +46,9 @@ const TRADES = [
 ];
 
 // Small and mid-size US cities, all regions. Searches rotate through trade × city pairs.
-const CITIES = `Tulsa OK|Wichita KS|Omaha NE|Des Moines IA|Springfield MO|Little Rock AR|Shreveport LA|Lafayette LA|Jackson MS|Mobile AL|Montgomery AL|Huntsville AL|Chattanooga TN|Knoxville TN|Lexington KY|Bowling Green KY|Evansville IN|Fort Wayne IN|Terre Haute IN|South Bend IN|Toledo OH|Dayton OH|Akron OH|Canton OH|Youngstown OH|Erie PA|Scranton PA|Allentown PA|Reading PA|Lancaster PA|Harrisburg PA|Syracuse NY|Rochester NY|Albany NY|Binghamton NY|Utica NY|Buffalo NY|Hartford CT|New Haven CT|Worcester MA|Springfield MA|Manchester NH|Portland ME|Burlington VT|Providence RI|Trenton NJ|Wilmington DE|Hagerstown MD|Roanoke VA|Lynchburg VA|Richmond VA|Charleston WV|Greensboro NC|Fayetteville NC|Wilmington NC|Asheville NC|Columbia SC|Greenville SC|Augusta GA|Macon GA|Savannah GA|Columbus GA|Tallahassee FL|Pensacola FL|Gainesville FL|Ocala FL|Lakeland FL|Fort Myers FL|Daytona Beach FL|Beaumont TX|Waco TX|Tyler TX|Lubbock TX|Amarillo TX|Abilene TX|Midland TX|Odessa TX|San Angelo TX|Corpus Christi TX|Laredo TX|Killeen TX|Wichita Falls TX|Lawton OK|Norman OK|Topeka KS|Lincoln NE|Sioux Falls SD|Rapid City SD|Fargo ND|Bismarck ND|Duluth MN|Rochester MN|St. Cloud MN|Eau Claire WI|Green Bay WI|Appleton WI|Rockford IL|Peoria IL|Springfield IL|Champaign IL|Joliet IL|Davenport IA|Cedar Rapids IA|Grand Rapids MI|Lansing MI|Kalamazoo MI|Flint MI|Saginaw MI|Billings MT|Missoula MT|Boise ID|Idaho Falls ID|Casper WY|Pueblo CO|Grand Junction CO|Colorado Springs CO|Ogden UT|Provo UT|St. George UT|Reno NV|Las Cruces NM|Farmington NM|Flagstaff AZ|Yuma AZ|Tucson AZ|Mesa AZ|Bakersfield CA|Fresno CA|Modesto CA|Stockton CA|Redding CA|Chico CA|Visalia CA|Salinas CA|Eugene OR|Medford OR|Salem OR|Bend OR|Spokane WA|Yakima WA|Tacoma WA|Kennewick WA|Anchorage AK|Hilo HI`.split("|");
+const CITIES = (`Tulsa OK|Wichita KS|Omaha NE|Des Moines IA|Springfield MO|Little Rock AR|Shreveport LA|Lafayette LA|Jackson MS|Mobile AL|Montgomery AL|Huntsville AL|Chattanooga TN|Knoxville TN|Lexington KY|Bowling Green KY|Evansville IN|Fort Wayne IN|Terre Haute IN|South Bend IN|Toledo OH|Dayton OH|Akron OH|Canton OH|Youngstown OH|Erie PA|Scranton PA|Allentown PA|Reading PA|Lancaster PA|Harrisburg PA|Syracuse NY|Rochester NY|Albany NY|Binghamton NY|Utica NY|Buffalo NY|Hartford CT|New Haven CT|Worcester MA|Springfield MA|Manchester NH|Portland ME|Burlington VT|Providence RI|Trenton NJ|Wilmington DE|Hagerstown MD|Roanoke VA|Lynchburg VA|Richmond VA|Charleston WV|Greensboro NC|Fayetteville NC|Wilmington NC|Asheville NC|Columbia SC|Greenville SC|Augusta GA|Macon GA|Savannah GA|Columbus GA|Tallahassee FL|Pensacola FL|Gainesville FL|Ocala FL|Lakeland FL|Fort Myers FL|Daytona Beach FL|Beaumont TX|Waco TX|Tyler TX|Lubbock TX|Amarillo TX|Abilene TX|Midland TX|Odessa TX|San Angelo TX|Corpus Christi TX|Laredo TX|Killeen TX|Wichita Falls TX|Lawton OK|Norman OK|Topeka KS|Lincoln NE|Sioux Falls SD|Rapid City SD|Fargo ND|Bismarck ND|Duluth MN|Rochester MN|St. Cloud MN|Eau Claire WI|Green Bay WI|Appleton WI|Rockford IL|Peoria IL|Springfield IL|Champaign IL|Joliet IL|Davenport IA|Cedar Rapids IA|Grand Rapids MI|Lansing MI|Kalamazoo MI|Flint MI|Saginaw MI|Billings MT|Missoula MT|Boise ID|Idaho Falls ID|Casper WY|Pueblo CO|Grand Junction CO|Colorado Springs CO|Ogden UT|Provo UT|St. George UT|Reno NV|Las Cruces NM|Farmington NM|Flagstaff AZ|Yuma AZ|Tucson AZ|Mesa AZ|Bakersfield CA|Fresno CA|Modesto CA|Stockton CA|Redding CA|Chico CA|Visalia CA|Salinas CA|Eugene OR|Medford OR|Salem OR|Bend OR|Spokane WA|Yakima WA|Tacoma WA|Kennewick WA|Anchorage AK|Hilo HI|`
+  // Small towns: older websites are much more common here than in the cities above.
+  + `Hobbs NM|Clovis NM|Roswell NM|Carlsbad NM|Alamogordo NM|Gallup NM|Silver City NM|Deming NM|Kingman AZ|Show Low AZ|Sierra Vista AZ|Prescott AZ|Elko NV|Fallon NV|Cedar City UT|Vernal UT|Rock Springs WY|Sheridan WY|Riverton WY|Gillette WY|Durango CO|Montrose CO|Sterling CO|Alamosa CO|Garden City KS|Hays KS|Salina KS|Dodge City KS|Liberal KS|Emporia KS|North Platte NE|Kearney NE|Grand Island NE|Scottsbluff NE|Norfolk NE|Mitchell SD|Aberdeen SD|Watertown SD|Minot ND|Dickinson ND|Williston ND|Jamestown ND|Bemidji MN|Brainerd MN|Mankato MN|Willmar MN|Wausau WI|Marshfield WI|Rhinelander WI|Marquette MI|Escanaba MI|Traverse City MI|Alpena MI|Mount Pleasant MI|Ottumwa IA|Mason City IA|Fort Dodge IA|Spencer IA|Quincy IL|Mattoon IL|Effingham IL|Carbondale IL|Vincennes IN|Marion IN|Columbus IN|Jasper IN|Chillicothe OH|Marietta OH|Zanesville OH|Findlay OH|Paducah KY|Hopkinsville KY|Somerset KY|Pikeville KY|Cookeville TN|Jackson TN|Tullahoma TN|Morristown TN|Tupelo MS|Hattiesburg MS|Meridian MS|Greenville MS|Dothan AL|Florence AL|Gadsden AL|Anniston AL|Valdosta GA|Albany GA|Dalton GA|Rome GA|Lake City FL|Palatka FL|Sebring FL|Marianna FL|Florence SC|Orangeburg SC|Sumter SC|Hickory NC|Rocky Mount NC|Goldsboro NC|Wilkesboro NC|Danville VA|Martinsville VA|Winchester VA|Beckley WV|Clarksburg WV|Parkersburg WV|Cumberland MD|Salisbury MD|Altoona PA|Williamsport PA|Johnstown PA|Oil City PA|Elmira NY|Olean NY|Watertown NY|Plattsburgh NY|Bangor ME|Presque Isle ME|Rutland VT|Keene NH|Torrington CT|Pittsfield MA|Texarkana TX|Lufkin TX|Nacogdoches TX|Victoria TX|Del Rio TX|Big Spring TX|Brownwood TX|Paris TX|Ardmore OK|Enid OK|Stillwater OK|Muskogee OK|Jonesboro AR|Hot Springs AR|Russellville AR|El Dorado AR|Monroe LA|Alexandria LA|Natchitoches LA|Houma LA|Joplin MO|Rolla MO|Sedalia MO|Cape Girardeau MO|Pocatello ID|Twin Falls ID|Lewiston ID|Coeur d'Alene ID|Helena MT|Bozeman MT|Great Falls MT|Kalispell MT|Klamath Falls OR|Roseburg OR|Pendleton OR|Wenatchee WA|Walla Walla WA|Port Angeles WA|Eureka CA|Yreka CA|El Centro CA|Barstow CA|Ketchikan AK|Fairbanks AK`).split("|");
 
 // Franchises and chains (their sites are corporate; our pitch doesn't fit).
 const CHAIN = /\b(midas|meineke|jiffy|firestone|goodyear|pep boys|valvoline|take 5|maaco|caliber|gerber|service king|roto-rooter|mr\.? rooter|benjamin franklin|one hour|aire serv|ars\b|rescue rooter|terminix|orkin|truly nolen|servpro|servicemaster|stanley steemer|chem-?dry|molly maid|merry maids|two men and a truck|great clips|supercuts|sport clips|fantastic sams|planet fitness|anytime fitness|snap fitness|crossfit|ups store|fedex|sherwin|home depot|lowe'?s|ace hardware|true value|mattress firm|petsmart|petco|subway|mcdonald|starbucks|dunkin|walmart|aamco|cottman|safelite|precision tune|christian brothers|batteries plus|mister sparky|mosquito joe|weed man|trugreen|lawn doctor|window world|bath fitter|re-?bath|paul davis|belfor|budget blinds|sears)\b/i;
@@ -70,7 +75,7 @@ async function get(url, ms = 12000) {
   }
 }
 
-// Scores how dated a homepage looks. 3+ counts as outdated.
+// Scores how dated a homepage looks. 2+ counts as outdated (e.g. untouched since 2018).
 function outdated(page, httpsWorks) {
   const h = page.html;
   const reasons = [];
@@ -107,7 +112,7 @@ async function checkSite(place) {
   if (!page) return { domain, skip: "site didn't load" };
   if (MODERN.test(page.html)) return { domain, skip: "modern site builder" };
   const o = outdated(page, Boolean(httpsPage));
-  if (o.score < 3) return { domain, skip: `looks current (score ${o.score})` };
+  if (o.score < 2) return { domain, skip: `looks current (score ${o.score})` };
   let emails = emailsIn(page.html, domain);
   if (!emails.length) {
     // Contact/about pages linked from the homepage, or the usual names.
@@ -180,10 +185,21 @@ async function pool(items, n, fn) {
     .filter((q) => !searched.has(q))
     .slice(0, SEARCHES);
 
+  const usageFile = path.join(LEADS, "places-usage.log");
+  const month = new Date().toISOString().slice(0, 7);
+  let usedThisMonth = read(usageFile).split("\n").filter((l) => l.startsWith(month)).length;
+  console.log(`Google searches used this month: ${usedThisMonth} of ${MONTHLY_LIMIT}`);
+
   const candidates = [];
   const tally = {};
   const newDomains = [];
   for (const q of queries) {
+    if (usedThisMonth >= MONTHLY_LIMIT) {
+      console.log(`Stopped: reached ${MONTHLY_LIMIT} Google searches this month (PLACES_MONTHLY_LIMIT).`);
+      break;
+    }
+    fs.appendFileSync(usageFile, `${new Date().toISOString()} ${q}\n`);
+    usedThisMonth++;
     const places = await search(q);
     fs.appendFileSync(searchedFile, `${q}\n`);
     const fresh = [];
