@@ -33,12 +33,12 @@ Never invent services, years in business, licenses, awards, reviews or slogans. 
 | email | The email printed on their site |
 | address | Street address if listed, otherwise "" |
 | hours | Hours as listed, using \n between lines, or "" |
-| tagline | Their own slogan if they have one, otherwise "" |
+| tagline | Their own business slogan if they have one, otherwise "". It becomes the big headline, so it must be about their business. Skip general phrases like "Land of the Free, Home of the Brave" |
 | about | Their about-us text, cleaned up and up to about 5 sentences. Fix typos, keep their facts |
 | services | Up to 9 items: {"name": "Drain Cleaning", "desc": "one short line from their site, or empty"} |
 | website | Full URL of their current site |
-| logoUrl | https URL of their logo image, or "" |
-| photoUrls | 3–6 https URLs of their own photos (work, trucks, storefront, food). No icons, stock badges or tiny images. http-only images won't load, so skip those |
+| logoUrl | https URL of their actual logo, or "". Not the tiny browser-tab icon (favicon) and nothing smaller than about 100 pixels wide |
+| photoUrls | 3–6 https URLs of their own photos. The FIRST one is the big background at the top, so make it their best shot of their work, team, trucks, storefront or products. Not a photo of another company's brand (like a sponsor or a celebrity visit). No icons, stock badges or tiny images. Open each URL to confirm it loads over https. Many old sites only work on http, and those images won't show, so leave them out (an empty list is fine) |
 | color | Their main brand color as hex (from the logo or site), e.g. "#c62828" |
 | hook | One friendly, specific sentence on what the new page improves, e.g. "Your current site is hard to read on a phone, so I built this one phone-first." Never insult their site or business |
 | whyOutdated | Your note on what's outdated (for us, not shown to them) |
