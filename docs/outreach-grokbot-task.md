@@ -12,18 +12,34 @@ You find small businesses for EDZ Solutions, which builds websites and laser-eng
 
 Run `cd ~/EDZ-Solutions && node scripts/outreach-daily.js` and read the `queue:` line. That's how many businesses are waiting to be emailed. The goal is to keep **at least 100** waiting. If the queue is 100 or more, stop and report the number. Otherwise go on to step 1.
 
-## 1. Find up to 25 businesses
+## 1. Get candidates from the lead finder
 
-Find up to 25 businesses this run (save and run the script after every 10 or so, so a long run isn't lost). Each one must fit every rule:
+Look in `~/EDZ-Solutions/leads/` for a `candidates-*.json` file that hasn't been renamed to `.done.json`. If there isn't one, run:
 
-- **United States only.** Small, independent, local businesses: trades (plumbing, HVAC, roofing, electrical, landscaping, pest control, cleaning, towing, auto repair, body shops), restaurants, cafes, bakeries, salons, barbers, gyms, contractors, retail shops and the like. Rotate industries and states every day. Don't use the same city twice in one week.
+```
+cd ~/EDZ-Solutions && node scripts/find-leads.js
+```
+
+It searches Google's business listings (15 trade + city searches, about 300 businesses), throws out chains, businesses without websites, modern sites and sites with no email, and saves the rest, already filled in with business, industry, city, state, phone, email, address, website and whyOutdated, to a new `candidates-*.json`. It already keeps `checked-domains.txt` up to date.
+
+Work through up to 25 candidates per run. For each one, open their website and decide:
+
+- **Keep it** only if the site really is outdated, the business is small and independent, it fits the skip list below, and the email shown is really printed on their site (the finder found it there, but confirm it's the business's own contact email, not a web designer's, a supplier's or a random person's).
+- **Drop it** otherwise. No need to explain.
+
+When you've gone through every candidate in a file, rename it from `.json` to `.done.json`.
+
+The skip rules still apply:
+- **United States only.** Small, independent, local businesses: trades (plumbing, HVAC, roofing, electrical, landscaping, pest control, cleaning, towing, auto repair, body shops), restaurants, cafes, bakeries, salons, barbers, gyms, contractors, retail shops and the like.
 - **Their website is clearly outdated.** At least one of these is true: it doesn't fit or work on a phone; the copyright year is 2019 or older; there's no https; it has a table or Flash layout, broken images or "under construction" pages; or it's hard to find their phone number or services. Skip any business whose site already looks modern. Our pitch won't land with them.
 - **A business email is printed on their own website** (contact page, footer or about page). Copy it exactly. Never guess an address (no made-up info@...), and skip the business if the only contact option is a form.
-- **Skip:** chains and franchises, government, schools, nonprofits, law firms, medical or dental practices, cannabis, adult, firearms, any site that says "no solicitation", and any domain listed in `~/EDZ-Solutions/leads/checked-domains.txt`.
+- **Skip:** chains and franchises, government, schools, nonprofits, law firms, medical or dental practices, cannabis, adult, firearms, any site that says "no solicitation". (Candidates from the lead finder are already listed in `checked-domains.txt`. That's expected, so don't skip them for it.)
 
-Add every domain you look at to `~/EDZ-Solutions/leads/checked-domains.txt` (one per line), whether you use it or not, so you never research it again.
+If you look at any site that didn't come from the lead finder, add its domain to `~/EDZ-Solutions/leads/checked-domains.txt`.
 
 ## 2. Collect their info, using only facts from their website
+
+Keep the fields the lead finder filled in (fix them if they're wrong) and add the rest from their site.
 
 Never invent services, years in business, licenses, awards, reviews or slogans. Leave a field empty ("" or []) when the site doesn't say. Everything you collect becomes a public sample page in their name.
 

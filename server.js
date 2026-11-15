@@ -1024,6 +1024,12 @@ app.post("/api/admin/prospects", requireAdmin, async (req, res) => {
   res.json({ added, skipped });
 });
 
+// Every website domain already in the prospect list, so the lead finder skips them.
+app.get("/api/admin/prospect-domains", requireAdmin, async (req, res) => {
+  const { rows } = await pool.query("SELECT domain FROM prospects WHERE domain IS NOT NULL");
+  res.json({ domains: rows.map((r) => r.domain) });
+});
+
 app.get("/api/admin/prospects", requireAdmin, async (req, res) => {
   const status = PROSPECT_STATUSES.includes(req.query.status) ? req.query.status : null;
   const { rows } = await pool.query(
