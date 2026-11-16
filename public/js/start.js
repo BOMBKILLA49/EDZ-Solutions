@@ -24,6 +24,11 @@
           const field = document.querySelector(`#project [name="${name}"]`);
           if (field && value && !field.value) field.value = value;
         }
+        // No website yet: default to "find me the best domain (free)".
+        if (info.domainStatus === "need") {
+          $("#domain-status").value = "need";
+          $("#domain-status").dispatchEvent(new Event("change"));
+        }
         $("#preview-note").hidden = false;
         $("#preview-link").href = `/p/${encodeURIComponent(previewSlug)}?admin=1`;
       });

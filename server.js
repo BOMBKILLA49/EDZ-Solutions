@@ -950,7 +950,9 @@ app.post("/api/admin/projects/:id/status", requireAdmin, async (req, res) => {
 
 // ---------- outreach: sample homepages Grok Bot's prospects get emailed ----------
 
-const PROSPECT_STATUSES = ["new", "ready", "sending", "sent", "replied", "won", "unsubscribed", "bounced", "skipped"];
+// Email prospects: new → ready → sent → replied / won. Call-list prospects (no email):
+// new → call → interested (said yes; link texted) / no_answer / not_interested / won.
+const PROSPECT_STATUSES = ["new", "ready", "sending", "sent", "replied", "won", "unsubscribed", "bounced", "skipped", "call", "no_answer", "interested", "not_interested"];
 
 function slugify(v) {
   return String(v || "").toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
@@ -968,6 +970,7 @@ function siteDomain(url) {
 function prospectFromLead(lead) {
   const l = lead || {};
   const email = clean(l.email, 120).toLowerCase();
+  const phoneKey = String(l.phone || "").replace(/\D/g, "").slice(-10);
   const data = {
     business: clean(l.business, 100),
     contactName: clean(l.contactName, 80),
@@ -992,13 +995,21 @@ function prospectFromLead(lead) {
     hook: clean(l.hook, 200),
     whyOutdated: clean(l.whyOutdated, 300),
     source: clean(l.source, 200),
+    // No-website businesses: where their info (and email, if any) came from.
+    noWebsite: !l.website,
+    emailSource: clean(l.emailSource, 120), // e.g. "your Facebook page"
+    facebookUrl: /^https:\/\/(www\.|m\.)?facebook\.com\//.test(l.facebookUrl || "") ? clean(l.facebookUrl, 200) : "",
+    googleMapsUrl: /^https:\/\/(maps\.google\.com|www\.google\.com\/maps|maps\.app\.goo\.gl)/.test(l.googleMapsUrl || "") ? clean(l.googleMapsUrl, 300) : "",
   };
   if (!data.business) return { error: "no business name" };
-  if (!/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(email)) return { error: "no valid email" };
-  const domain = siteDomain(data.website);
-  if (!domain) return { error: "no website" };
+  const hasEmail = /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(email);
+  if (email && !hasEmail) return { error: "email doesn't look valid" };
+  const domain = data.website ? siteDomain(data.website) : null;
+  if (data.website && !domain) return { error: "website address doesn't look valid" };
+  if (!hasEmail && phoneKey.length !== 10) return { error: "no email and no 10-digit phone" };
+  if (!hasEmail && domain) return { error: "has a website but no email (skip it)" };
   const slug = `${slugify(`${data.business} ${data.city}`)}-${crypto.randomBytes(2).toString("hex")}`;
-  return { slug, email, domain, data };
+  return { slug, email: hasEmail ? email : null, domain, data, channel: hasEmail ? "email" : "call", phoneKey: domain ? null : phoneKey || null };
 }
 
 app.post("/api/admin/prospects", requireAdmin, async (req, res) => {
@@ -1014,26 +1025,26 @@ app.post("/api/admin/prospects", requireAdmin, async (req, res) => {
     }
     // The unique indexes on email and website domain mean nobody is ever added (or emailed) twice.
     const { rows } = await pool.query(
-      `INSERT INTO prospects (id, slug, email, domain, data, unsub_token) VALUES ($1,$2,$3,$4,$5,$6)
+      `INSERT INTO prospects (id, slug, email, domain, data, unsub_token, channel, phone_key) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
        ON CONFLICT DO NOTHING RETURNING id, slug`,
-      [crypto.randomUUID(), p.slug, p.email, p.domain, p.data, crypto.randomBytes(16).toString("hex")]
+      [crypto.randomUUID(), p.slug, p.email, p.domain, p.data, crypto.randomBytes(16).toString("hex"), p.channel, p.phoneKey]
     );
-    if (rows[0]) added.push({ id: rows[0].id, slug: rows[0].slug, business: p.data.business });
-    else skipped.push({ business: p.data.business, reason: "already in the list (same email or website)" });
+    if (rows[0]) added.push({ id: rows[0].id, slug: rows[0].slug, business: p.data.business, channel: p.channel });
+    else skipped.push({ business: p.data.business, reason: "already in the list (same email, website or phone)" });
   }
   res.json({ added, skipped });
 });
 
 // Every website domain already in the prospect list, so the lead finder skips them.
 app.get("/api/admin/prospect-domains", requireAdmin, async (req, res) => {
-  const { rows } = await pool.query("SELECT domain FROM prospects WHERE domain IS NOT NULL");
-  res.json({ domains: rows.map((r) => r.domain) });
+  const { rows } = await pool.query("SELECT domain, phone_key FROM prospects WHERE domain IS NOT NULL OR phone_key IS NOT NULL");
+  res.json({ domains: rows.map((r) => r.domain).filter(Boolean), phones: rows.map((r) => r.phone_key).filter(Boolean) });
 });
 
 app.get("/api/admin/prospects", requireAdmin, async (req, res) => {
   const status = PROSPECT_STATUSES.includes(req.query.status) ? req.query.status : null;
   const { rows } = await pool.query(
-    `SELECT id, created_at, slug, email, domain, status, data, sent_at, sent_from, views, last_view_at, notes, shot IS NOT NULL AS has_shot
+    `SELECT id, created_at, slug, email, domain, status, channel, data, sent_at, sent_from, views, last_view_at, notes, shot IS NOT NULL AS has_shot
      FROM prospects ${status ? "WHERE status=$1" : ""} ORDER BY created_at DESC LIMIT 500`,
     status ? [status] : []
   );
@@ -1046,7 +1057,8 @@ app.get("/api/admin/prospects", requireAdmin, async (req, res) => {
     dailyLimit: outreach.settings().dailyLimit,
     notReady: outreach.notReady(),
     mailboxes: await outreach.mailboxStats(pool),
-    queue: (await pool.query("SELECT count(*)::int AS n FROM prospects WHERE status IN ('new','ready')")).rows[0].n,
+    queue: (await pool.query("SELECT count(*)::int AS n FROM prospects WHERE status IN ('new','ready') AND channel='email'")).rows[0].n,
+    callList: (await pool.query("SELECT count(*)::int AS n FROM prospects WHERE status='call'")).rows[0].n,
     sendingNow: outreach.inWindow(),
   });
 });
@@ -1059,7 +1071,7 @@ app.post("/api/admin/prospects/:id/shot", requireAdmin, express.raw({ type: "ima
     const { data, info } = await img.toBuffer({ resolveWithObject: true });
     const jpg = await sharp(data).extract({ left: 0, top: 0, width: info.width, height: Math.min(info.height, 1300) }).jpeg({ quality: 78, mozjpeg: true }).toBuffer();
     const { rowCount } = await pool.query(
-      "UPDATE prospects SET shot=$2, status=CASE WHEN status='new' THEN 'ready' ELSE status END WHERE id=$1",
+      "UPDATE prospects SET shot=$2, status=CASE WHEN status='new' THEN (CASE WHEN channel='call' THEN 'call' ELSE 'ready' END) ELSE status END WHERE id=$1",
       [req.params.id, jpg]
     );
     if (!rowCount) return res.status(404).json({ error: "No such prospect." });
@@ -1126,6 +1138,7 @@ app.get("/api/preview-info/:slug", async (req, res) => {
     address: d.address,
     hours: d.hours,
     domain: d.website ? siteDomain(d.website) : "",
+    domainStatus: d.website ? "have" : "need",
     contactName: d.contactName,
     contactEmail: d.email,
   });

@@ -86,6 +86,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   const status = await api("GET", "/api/admin/prospects?status=ready");
   console.log(`queue: ${status.queue} waiting to be emailed`);
+  console.log(`call list: ${status.callList} businesses to call (no email)`);
   console.log(`mailboxes: ${status.mailboxes.map((m) => `${m.user} ${m.sent24}/${m.limit}`).join(", ")}`);
   if (!sendNow) return console.log("not sending: the site emails the queue on its own on weekdays.");
 

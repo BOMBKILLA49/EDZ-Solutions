@@ -22,7 +22,7 @@ cd ~/EDZ-Solutions && node scripts/find-leads.js
 
 It searches Google's business listings (15 trade + city searches, about 300 businesses; it stops itself at 30 searches a day to stay in Google's free tier, so if it says the limit is reached, finish any candidates you have and stop for today), throws out chains, businesses without websites, modern sites and sites with no email, and saves the rest, already filled in with business, industry, city, state, phone, email, address, website and whyOutdated, to a new `candidates-*.json`. It already keeps `checked-domains.txt` up to date.
 
-Work through up to 25 candidates per run. For each one, open their website and decide:
+Work through up to 25 candidates per run (outdated-site candidates come first in the file, then no-website ones; see 2b). For each one, open their website and decide:
 
 - **Keep it** only if the site really is outdated, the business is small and independent, it fits the skip list below, and the email shown is really printed on their site (the finder found it there, but confirm it's the business's own contact email, not a web designer's, a supplier's or a random person's).
 - **Drop it** otherwise. No need to explain.
@@ -65,6 +65,17 @@ Never invent services, years in business, licenses, awards, reviews or slogans. 
 | whyOutdated | Your note on what's outdated (for us, not shown to them) |
 | source | Where you found them, e.g. "Google Maps search: plumber Tulsa OK" |
 
+## 2b. Businesses with no website (`"noWebsite": true`)
+
+The lead finder also keeps businesses that have no website, or only a Facebook, Yelp or similar page, as long as they have a phone number. They come pre-filled from their Google listing (name, industry, city, state, phone, address, hours, googleMapsUrl, and facebookUrl when Google lists one). For each one:
+
+1. **Look for an email, one business at a time, like a person would.** Open their Facebook page (the `facebookUrl`, or search Facebook for the business name and town) and read the About / Contact info. Also check their Google listing. If a business email is shown, put it in `email` and set `emailSource` to where you found it, e.g. "your Facebook page" or "your Google Business listing". Never guess an email.
+2. **Fill in the rest from those pages**, with the same rules as above: only facts they've published. `about` and `services` usually come from the Facebook About section, posts or Google listing. Leave `website` empty. Set `facebookUrl` if you found their page. Facebook photo links stop working after a while, so leave `photoUrls` and `logoUrl` empty for these.
+3. **No email? Keep them anyway.** Leave `email` empty. They go on the call list in /admin, where Ty calls them.
+4. **Drop** chains, government, anything in the skip list, and businesses that look closed (Facebook page silent for 2+ years, "permanently closed" on Google).
+
+**Never send a message, friend request or comment on Facebook, and never log in to anything.** Only read public pages. Facebook messages are sent by hand by Ty from the call list.
+
 ## 3. Save and run
 
 Save them as a JSON array to `~/EDZ-Solutions/leads/YYYY-MM-DD-HHMM.json` (today's date and the time, so runs on the same day don't overwrite each other). See `docs/outreach-lead-example.json` for the exact shape. Then run:
@@ -77,4 +88,4 @@ The script adds the businesses (and skips anyone already contacted), takes a scr
 
 ## 4. Report
 
-Reply with a short summary: how many you found, added and skipped (and why), and the final `queue:` and `mailboxes:` lines. Include any lines that start with "skipped" or "screenshot FAILED".
+Reply with a short summary: how many you kept for email (outdated site / no website with an email you found) and for the call list, how many you dropped and why, and the final `queue:` and `mailboxes:` lines. Include any lines that start with "skipped" or "screenshot FAILED".

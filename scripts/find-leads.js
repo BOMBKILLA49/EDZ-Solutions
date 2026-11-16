@@ -3,9 +3,12 @@
 //   node scripts/find-leads.js                 run 15 Google searches (trade + city), about 300 businesses
 //   node scripts/find-leads.js --searches 40   more searches this run
 //
-// For each business Google Places returns, it skips ones with no website, chains, sites
-// already checked or contacted, and modern-looking sites; then it looks for an email printed
-// on the site. Survivors are saved, pre-filled, to leads/candidates-YYYY-MM-DD-HHMM.json.
+// For each business Google Places returns, it skips chains, sites already checked or contacted,
+// and modern-looking sites; then it looks for an email printed on the site. Businesses with NO
+// website (or only a Facebook/Yelp-type page) are kept too when they have a phone number, marked
+// noWebsite: Grok Bot looks for an email on their Facebook page or listing, and if there is
+// none they go on the /admin call list. Survivors are saved, pre-filled, to
+// leads/candidates-YYYY-MM-DD-HHMM.json.
 // Every domain looked at is added to leads/checked-domains.txt; every search to leads/searched.txt.
 //
 // Needs a Google Places API (New) key in ~/.config/edz/google_places_key (or GOOGLE_PLACES_KEY).
@@ -147,7 +150,7 @@ async function search(query) {
     headers: {
       "Content-Type": "application/json",
       "X-Goog-Api-Key": KEY,
-      "X-Goog-FieldMask": "places.displayName,places.websiteUri,places.nationalPhoneNumber,places.formattedAddress,places.addressComponents,places.businessStatus",
+      "X-Goog-FieldMask": "places.displayName,places.websiteUri,places.nationalPhoneNumber,places.formattedAddress,places.addressComponents,places.businessStatus,places.regularOpeningHours,places.primaryTypeDisplayName,places.googleMapsUri",
     },
     body: JSON.stringify({ textQuery: query, pageSize: 20, regionCode: "US" }),
   });
@@ -160,8 +163,13 @@ async function knownDomains() {
   const set = new Set(read(path.join(LEADS, "checked-domains.txt")).split(/\s+/).filter(Boolean).map((d) => d.replace(/^www\./, "").toLowerCase()));
   try {
     const res = await fetch(`${SITE}/api/admin/prospect-domains`, { headers: { Authorization: `Basic ${Buffer.from(`admin:${PASSWORD}`).toString("base64")}` } });
-    if (res.ok) for (const d of (await res.json()).domains) set.add(d);
+    if (res.ok) {
+      const out = await res.json();
+      for (const d of out.domains) set.add(d);
+      for (const ph of out.phones || []) set.add(`tel:${ph}`);
+    }
   } catch {}
+  for (const ph of read(path.join(LEADS, "checked-phones.txt")).split(/\s+/).filter(Boolean)) set.add(`tel:${ph}`);
   return set;
 }
 
@@ -202,6 +210,22 @@ async function pool(items, n, fn) {
   const candidates = [];
   const tally = {};
   const newDomains = [];
+  const newPhones = [];
+  // A business's address parts and the fields every candidate shares.
+  const base = (p, q) => {
+    const comp = Object.fromEntries((p.addressComponents || []).flatMap((c) => c.types.map((t) => [t, c.shortText])));
+    return {
+      business: p.displayName.text,
+      industry: p.primaryTypeDisplayName?.text || q.split(" in ")[0].replace(/\b\w/g, (c) => c.toUpperCase()),
+      city: comp.locality || comp.sublocality || "",
+      state: comp.administrative_area_level_1 || "",
+      phone: p.nationalPhoneNumber || "",
+      address: p.formattedAddress?.replace(/, USA$/, "") || "",
+      hours: (p.regularOpeningHours?.weekdayDescriptions || []).join("\n"),
+      googleMapsUrl: p.googleMapsUri || "",
+      source: `Google Places search: ${q}`,
+    };
+  };
   for (const q of queries) {
     if (usedThisMonth >= MONTHLY_LIMIT || usedToday >= DAILY_LIMIT) {
       console.log(`Stopped: reached the Google search limit (${usedToday}/${DAILY_LIMIT} today, ${usedThisMonth}/${MONTHLY_LIMIT} this month). Try again tomorrow.`);
@@ -216,7 +240,29 @@ async function pool(items, n, fn) {
     for (const p of places) {
       const name = p.displayName?.text || "";
       const d = p.websiteUri && domainOf(p.websiteUri);
-      const why = p.businessStatus && p.businessStatus !== "OPERATIONAL" ? "not operating" : !d ? "no website" : CHAIN.test(name) ? "chain" : known.has(d) ? "already checked" : /facebook|instagram|yelp|google|linktr|square\.site|business\.site/.test(d) ? "no real website" : null;
+      const phoneKey = String(p.nationalPhoneNumber || "").replace(/\D/g, "").slice(-10);
+      const socialOnly = d && /facebook|instagram|yelp|google|linktr|square\.site|business\.site|nextdoor|angi|homeadvisor|thumbtack/.test(d);
+      if ((!d || socialOnly) && !(p.businessStatus && p.businessStatus !== "OPERATIONAL") && !CHAIN.test(name)) {
+        // No real website: a candidate if it has a phone we haven't seen.
+        const why2 = phoneKey.length !== 10 ? "no website or phone" : known.has(`tel:${phoneKey}`) ? "already checked" : null;
+        if (why2) {
+          tally[why2] = (tally[why2] || 0) + 1;
+          continue;
+        }
+        known.add(`tel:${phoneKey}`);
+        newPhones.push(phoneKey);
+        candidates.push({
+          ...base(p, q),
+          noWebsite: true,
+          email: "",
+          website: "",
+          facebookUrl: d && /facebook\.com/.test(d) ? p.websiteUri.replace(/^http:/, "https:") : "",
+          otherProfile: socialOnly && !/facebook\.com/.test(d) ? p.websiteUri : "",
+        });
+        tally["no website (kept for Facebook/call list)"] = (tally["no website (kept for Facebook/call list)"] || 0) + 1;
+        continue;
+      }
+      const why = p.businessStatus && p.businessStatus !== "OPERATIONAL" ? "not operating" : CHAIN.test(name) ? "chain" : known.has(d) ? "already checked" : null;
       if (why) {
         tally[why] = (tally[why] || 0) + 1;
         continue;
@@ -231,31 +277,27 @@ async function pool(items, n, fn) {
         tally[r.skip.replace(/ \(score \d\)/, "")] = (tally[r.skip.replace(/ \(score \d\)/, "")] || 0) + 1;
         continue;
       }
-      const comp = Object.fromEntries((p.addressComponents || []).flatMap((c) => c.types.map((t) => [t, c.shortText])));
       candidates.push({
-        business: p.displayName.text,
-        industry: q.split(" in ")[0].replace(/\b\w/g, (c) => c.toUpperCase()),
-        city: comp.locality || comp.sublocality || "",
-        state: comp.administrative_area_level_1 || "",
-        phone: p.nationalPhoneNumber || "",
+        ...base(p, q),
         email: r.emails[0],
         otherEmails: r.emails.slice(1, 4),
-        address: p.formattedAddress?.replace(/, USA$/, "") || "",
         website: r.finalUrl,
         whyOutdated: r.reasons.join(", "),
         outdatedScore: r.score,
-        source: `Google Places search: ${q}`,
       });
     }
     console.log(`${q}: ${places.length} results, ${fresh.length} new sites, ${candidates.length} candidates so far`);
   }
 
   if (newDomains.length) fs.appendFileSync(path.join(LEADS, "checked-domains.txt"), newDomains.join("\n") + "\n");
-  candidates.sort((a, b) => b.outdatedScore - a.outdatedScore);
+  if (newPhones.length) fs.appendFileSync(path.join(LEADS, "checked-phones.txt"), newPhones.join("\n") + "\n");
+  // Outdated websites (with an email) first, then no-website businesses.
+  candidates.sort((a, b) => (a.noWebsite ? 1 : 0) - (b.noWebsite ? 1 : 0) || (b.outdatedScore || 0) - (a.outdatedScore || 0));
   const stamp = new Date().toISOString().slice(0, 16).replace(/[-:]/g, "").replace("T", "-");
   const file = path.join(LEADS, `candidates-${stamp}.json`);
   fs.writeFileSync(file, JSON.stringify(candidates, null, 2));
-  console.log(`\n${queries.length} searches, ${newDomains.length} new websites checked, ${candidates.length} candidates → ${path.relative(ROOT, file)}`);
+  const noSite = candidates.filter((c) => c.noWebsite).length;
+  console.log(`\n${queries.length} searches, ${newDomains.length} new websites checked, ${candidates.length - noSite} outdated-site + ${noSite} no-website candidates → ${path.relative(ROOT, file)}`);
   console.log(`skipped: ${Object.entries(tally).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(", ")}`);
 })().catch((err) => {
   console.error(`find-leads failed: ${err.message}`);
