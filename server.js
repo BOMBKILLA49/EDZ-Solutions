@@ -1092,10 +1092,13 @@ app.post("/api/admin/outreach/send-next", requireAdmin, async (req, res) => {
 
 // Public sample homepage. ?shot=1 hides the EDZ banner for the screenshot; ?shot / ?admin views aren't counted.
 app.get("/p/:slug", async (req, res) => {
-  const { rows } = await pool.query("SELECT id, slug, data FROM prospects WHERE slug=$1", [req.params.slug]).catch(() => ({ rows: [] }));
+  const { rows } = await pool.query("SELECT id, slug, data, sent_at FROM prospects WHERE slug=$1", [req.params.slug]).catch(() => ({ rows: [] }));
   if (!rows[0]) return res.status(404).sendFile(path.join(__dirname, "public", "index.html"));
   const shot = req.query.shot === "1";
-  if (!shot && !req.query.admin && !/bot|crawl|spider|preview|scan|fetch/i.test(req.headers["user-agent"] || "")) {
+  // Email security scanners (Microsoft, Proofpoint...) open every link within a few minutes of
+  // delivery, so visits in the first 5 minutes after sending aren't counted as views.
+  const scannerWindow = rows[0].sent_at && Date.now() - new Date(rows[0].sent_at) < 5 * 60 * 1000;
+  if (!shot && !req.query.admin && !scannerWindow && !/bot|crawl|spider|preview|scan|fetch/i.test(req.headers["user-agent"] || "")) {
     pool.query("UPDATE prospects SET views=views+1, last_view_at=now() WHERE id=$1", [rows[0].id]).catch(() => {});
   }
   res.set("X-Robots-Tag", "noindex").type("html").send(renderPreview(rows[0], { shot, claimUrl: `/start?plan=launch&preview=${rows[0].slug}` }));
