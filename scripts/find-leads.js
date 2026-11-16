@@ -77,14 +77,18 @@ async function get(url, ms = 12000) {
   }
 }
 
-// Scores how dated a homepage looks. 2+ counts as outdated (e.g. untouched since 2018).
+// Scores how dated a homepage looks. 3+ counts as outdated: an old copyright year alone isn't
+// enough, since many modern sites never update their footer.
 function outdated(page, httpsWorks) {
   const h = page.html;
   const reasons = [];
   let score = 0;
   if (!/<meta[^>]+name=["']?viewport/i.test(h)) (score += 3), reasons.push("not built for phones (no viewport)");
   if (!httpsWorks) (score += 2), reasons.push("no https");
-  const years = [...h.matchAll(/(?:©|&copy;|&#169;|copyright)[^<]{0,40}?((?:19|20)\d\d)(?:\s*[-–]\s*((?:19|20)\d\d))?/gi)].map((m) => Number(m[2] || m[1]));
+  // Only the text people see: script/style code and comments carry library license years
+  // ("Copyright 2014 Twitter") that say nothing about when the site was last touched.
+  const visible = h.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>|<!--[\s\S]*?-->/gi, " ").replace(/<[^>]+>/g, " ");
+  const years = [...visible.matchAll(/(?:©|&copy;|&#169;|copyright)[^<]{0,40}?((?:19|20)\d\d)(?:\s*[-–]\s*((?:19|20)\d\d))?/gi)].map((m) => Number(m[2] || m[1]));
   const year = years.length ? Math.max(...years) : null;
   if (year && year <= 2018) (score += 2), reasons.push(`copyright ${year}`);
   else if (year && year <= 2020) (score += 1), reasons.push(`copyright ${year}`);
@@ -114,7 +118,7 @@ async function checkSite(place) {
   if (!page) return { domain, skip: "site didn't load" };
   if (MODERN.test(page.html)) return { domain, skip: "modern site builder" };
   const o = outdated(page, Boolean(httpsPage));
-  if (o.score < 2) return { domain, skip: `looks current (score ${o.score})` };
+  if (o.score < 3) return { domain, skip: `looks current (score ${o.score})` };
   let emails = emailsIn(page.html, domain);
   if (!emails.length) {
     // Contact/about pages linked from the homepage, or the usual names.
