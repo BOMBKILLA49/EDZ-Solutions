@@ -523,10 +523,15 @@
     // The sample-site link goes first and on its own line: Messenger and iMessage turn the
     // first link into a preview card with a picture of their new homepage.
     const firstName = (n) => String(n || "").trim().split(/\s+/)[0];
+    // What we couldn't find (same idea as missingInfo in lib/preview.js), for the messages.
+    const gapsFor = (d, skip = []) => [!d.logoUrl && "logo", !d.phone && "phone number", !d.email && "email", !d.address && "address"].filter((x) => x && !skip.includes(x));
+    const listOr = (a) => (a.length < 2 ? a.join("") : `${a.slice(0, -1).join(", ")} or ${a[a.length - 1]}`);
     function linkText(p) {
       const d = p.data || {};
       const hi = firstName(d.contactName) ? `Hi ${firstName(d.contactName)}` : "Hi";
-      return `${hi}, it's Ty from EDZ Solutions. Here's the ${d.website ? "new homepage" : "website"} I made for ${d.business}, like we talked about:\n\n${location.origin}/p/${p.slug}?utm_source=text\n\nIf you like it, it can be live in about 3 days for $99 setup + $19/month (cancel anytime). You can get started here: ${location.origin}/start?plan=launch&preview=${p.slug}&utm_source=text\n\nWant to add your logo or change anything? Just text me back.`;
+      const gaps = gapsFor(d, ["phone number"]);
+      const add = gaps.length ? `I couldn't find your ${listOr(gaps)} online, so I kept it simple. Add them here and I'll put them on your site:` : "If you like it, you can get started here:";
+      return `${hi}, it's Ty from EDZ Solutions. Here's the ${d.website ? "new homepage" : "website"} I made for ${d.business}, like we talked about:\n\n${location.origin}/p/${p.slug}?utm_source=text\n\n${add} ${location.origin}/start?plan=launch&preview=${p.slug}&utm_source=text\n\nIt can be live in about 3 days for $99 setup + $19/month (cancel anytime). Want to change anything? Just text me back.`;
     }
     function fbText(p) {
       const d = p.data || {};
@@ -534,7 +539,9 @@
       const intro = d.website
         ? `I came across ${d.business}'s website and put together a new homepage for you`
         : `I came across ${d.business} ${where} and noticed you don't have a website yet, so I made one for you using the info from your page`;
-      return `Hi! I'm Ty with EDZ Solutions. ${intro}. It's free to look at:\n\n${location.origin}/p/${p.slug}?utm_source=facebook\n\nIf you like it, I can have it live in about 3 days. It's $99 to set up and $19/month, and you can cancel anytime. You can get started here: ${location.origin}/start?plan=launch&preview=${p.slug}&utm_source=facebook\n\nWant to add your logo or change anything? Just message me back.`;
+      const gaps = gapsFor(d);
+      const add = gaps.length ? `I couldn't find your ${listOr(gaps)} online, so I kept it simple. Add them here and I'll put them on your site:` : "If you like it, you can get started here:";
+      return `Hi! I'm Ty with EDZ Solutions. ${intro}. It's free to look at:\n\n${location.origin}/p/${p.slug}?utm_source=facebook\n\n${add} ${location.origin}/start?plan=launch&preview=${p.slug}&utm_source=facebook\n\nIt can be live in about 3 days. It's $99 to set up and $19/month, and you can cancel anytime. Want to change anything? Just message me back.`;
     }
     async function loadCalls() {
       const all = await Promise.all(Object.keys(CSTATUS).map(async (k) => [k, (await (await fetch(`/api/admin/prospects?status=${k}`)).json()).prospects.filter((p) => p.channel === "call")]));

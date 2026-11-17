@@ -78,6 +78,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   for (const p of prospects) {
     const file = path.join(os.tmpdir(), `edz-shot-${p.slug}.png`);
     try {
+      // Their trade's stock photo first, if they have no photos of their own.
+      await api("POST", `/api/admin/prospects/${p.id}/prepare`).catch(() => {});
       await screenshot(`${SITE}/p/${p.slug}?shot=1`, file);
       await api("POST", `/api/admin/prospects/${p.id}/shot`, fs.readFileSync(file), "image/png");
       console.log(`screenshot ok: ${p.data.business}`);

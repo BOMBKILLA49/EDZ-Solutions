@@ -15,6 +15,7 @@ const sharp = require("sharp");
 const { renderPreview, safeUrl, hexColor } = require("./lib/preview");
 const outreach = require("./lib/outreach");
 const inbox = require("./lib/inbox");
+const tradeImages = require("./lib/tradeImages");
 
 const PORT = process.env.PORT || 3000;
 const SITE_URL = (process.env.SITE_URL || `http://localhost:${PORT}`).replace(/\/$/, "");
@@ -1485,7 +1486,31 @@ app.get("/p/:slug", async (req, res) => {
   if (!shot && !req.query.admin && !scannerWindow && !/bot|crawl|spider|preview|scan|fetch/i.test(req.headers["user-agent"] || "")) {
     pool.query("UPDATE prospects SET views=views+1, last_view_at=now() WHERE id=$1", [rows[0].id]).catch(() => {});
   }
-  res.set("X-Robots-Tag", "noindex").type("html").send(renderPreview(rows[0], { shot, siteUrl: SITE_URL, hasShot: rows[0].has_shot, claimUrl: `/start?plan=launch&preview=${rows[0].slug}` }));
+  // No photos of their own: use the trade's stock photo (made in the background if it's new).
+  let heroImage = "";
+  if (!(rows[0].data.photoUrls || []).length) {
+    const key = await tradeImages.hasTradeImage(pool, rows[0].data.industry);
+    if (key) heroImage = `/trade-img/${key}.jpg`;
+    else tradeImages.ensureTradeImage(pool, openai, IMAGE_MODEL, rows[0].data.industry);
+  }
+  res.set("X-Robots-Tag", "noindex").type("html").send(renderPreview(rows[0], { shot, siteUrl: SITE_URL, hasShot: rows[0].has_shot, heroImage, claimUrl: `/start?plan=launch&preview=${rows[0].slug}` }));
+});
+
+// The trade's AI stock photo (hero background for sample pages without the business's photos).
+app.get("/trade-img/:key.jpg", async (req, res) => {
+  const { rows } = await pool.query("SELECT image FROM trade_images WHERE key=$1", [req.params.key]).catch(() => ({ rows: [] }));
+  if (!rows[0]) return res.status(404).end();
+  res.set({ "Content-Type": "image/jpeg", "Cache-Control": "public, max-age=604800" }).send(rows[0].image);
+});
+
+// Makes sure a prospect's trade photo exists before its screenshot is taken (the daily script
+// calls this first). Waits for the image model when the trade has no photo yet (~10-20 s).
+app.post("/api/admin/prospects/:id/prepare", requireAdmin, async (req, res) => {
+  const { rows } = await pool.query("SELECT data FROM prospects WHERE id=$1", [req.params.id]).catch(() => ({ rows: [] }));
+  const d = rows[0]?.data;
+  if (!d) return res.status(404).json({ error: "No such prospect." });
+  const key = (d.photoUrls || []).length ? null : await tradeImages.ensureTradeImage(pool, openai, IMAGE_MODEL, d.industry);
+  res.json({ tradeImage: key });
 });
 
 // Wide 1200x630 crop of the top of their homepage: the picture Messenger, iMessage and texts
