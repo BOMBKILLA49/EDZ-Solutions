@@ -22,7 +22,7 @@ const SITE = {
   const header = document.createElement("header");
   header.className = "site-header";
   header.innerHTML = `<div class="wrap">
-      <a class="brand" href="/"><img class="brand-logo" src="/img/edz-logo.png?v=3" alt="EDZ Solutions" width="238" height="40"></a>
+      <a class="brand" href="/"><img class="brand-logo wordmark" src="/img/edz-wordmark.png?v=1" alt="EDZ Solutions" width="188" height="39"></a>
       <button class="nav-toggle" aria-label="Menu" aria-expanded="false">&#9776;</button>
       <nav class="nav">${nav}</nav>
     </div>`;

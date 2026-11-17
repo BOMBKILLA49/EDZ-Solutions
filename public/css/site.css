@@ -53,6 +53,8 @@ p { margin: 0 0 1em; }
 .site-header .wrap { display: flex; align-items: center; justify-content: space-between; height: 68px; }
 .brand { display: flex; align-items: center; gap: 10px; color: #fff; text-decoration: none; font-weight: 800; font-size: 1.15rem; letter-spacing: .02em; }
 .brand-logo { height: 40px; width: auto; display: block; }
+.brand-logo.wordmark { height: 39px; }
+@media (max-width: 560px) { .brand-logo.wordmark { height: 32px; } }
 .site-footer .brand-logo { height: 46px; }
 .brand-mark { width: 34px; height: 34px; border-radius: 8px; background: var(--accent); color: var(--ink); display: grid; place-items: center; font-weight: 900; font-size: .9rem; }
 .nav { display: flex; gap: 4px; align-items: center; }
