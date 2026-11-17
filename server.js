@@ -1071,7 +1071,11 @@ function requireAdmin(req, res, next) {
   res.set("WWW-Authenticate", 'Basic realm="EDZ orders"').status(401).send("Password required.");
 }
 
-app.get("/admin", requireAdmin, (req, res) => res.sendFile(path.join(__dirname, "views", "admin.html")));
+// Always a fresh copy, so new admin buttons show up without a hard refresh.
+app.get("/admin", requireAdmin, (req, res) => {
+  res.set("Cache-Control", "no-store");
+  res.sendFile(path.join(__dirname, "views", "admin.html"), { cacheControl: false, etag: false, lastModified: false });
+});
 
 app.get("/api/admin/orders", requireAdmin, async (req, res) => {
   const { rows } = await pool.query(
