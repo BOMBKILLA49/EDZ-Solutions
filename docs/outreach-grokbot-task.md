@@ -84,7 +84,9 @@ The lead finder also keeps businesses that have no website, or only a Facebook, 
 
 ### Facebook finder candidates (`candidates-fb-*.json`)
 
-These come with `facebookUrl` and whatever the search snippet showed (name, maybe phone or email, maybe a `websiteHint`). Open the Facebook page, one at a time and **never logged in**. If Facebook shows a login wall, skip that business (drop it) rather than logging in.
+These come with `facebookUrl` and whatever the search result showed (name, trade, town, maybe phone or email, maybe a `websiteHint`). Open the Facebook page, one at a time and **never logged in**.
+
+**If Facebook shows a login screen, don't try to get around it** (no logging in, no other browsers or tricks to get past it). Instead, **keep the business using only what the candidate file already has**: name, industry, city, state, and the phone/email from the search result. Leave about/services/hours empty. If there's a `websiteHint`, open that website instead: drop the business if the site is modern. Keep it if the site is outdated (fill in `website`, set `noWebsite` to false, and it needs an email from that site). Keep it with no website if the site doesn't load. Only drop a login-wall business if its name is clearly a chain, a person, a group, or outside the skip list rules.
 
 - **Real local business?** Drop personal profiles, groups, chains, anything in the skip list, and pages with no posts in the last 12 months.
 - **Do they have a website?** Check the page's About/Intro and the `websiteHint`. If they have a site, open it: if it's clearly outdated *and* shows an email, keep it as a normal outdated-site candidate (fill in `website`, set `noWebsite` to false). If it's modern, drop the business.
