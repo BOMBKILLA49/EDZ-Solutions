@@ -80,6 +80,7 @@
     #outreach-list td { vertical-align: top; }
     #outreach-list .acts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
     #outreach-list .acts .go { background: var(--accent); border-color: var(--accent); }
+    #outreach-list .acts .remove-row { color: var(--err); border-color: #fecaca; background: #fef2f2; }
     .pill-undo { border: 0; cursor: pointer; font-family: inherit; }
     .pill-undo:hover { outline: 2px solid var(--ink); }
     #outreach-list .acts a, #outreach-list .acts button { font: inherit; font-size: .82rem; font-weight: 700; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--line); background: #fff; color: var(--ink); text-decoration: none; cursor: pointer; white-space: nowrap; }
@@ -438,11 +439,12 @@
               <td class="${p.views ? "hot" : "meta"}">${p.views || 0}${p.last_view_at ? `<div class="meta" style="font-weight:400">${when(p.last_view_at)}</div>` : ""}</td>
               <td><div class="acts">
                 <a href="/p/${p.slug}?admin=1" target="_blank">View homepage</a>
-                <a href="/api/admin/prospects/${p.id}/email" target="_blank">View email</a>
+                ${p.email ? `<a href="/api/admin/prospects/${p.id}/email" target="_blank">View email</a>` : ""}
                 ${p.email && ["sent", "replied"].includes(p.status) ? `<a href="/api/admin/prospects/${p.id}/email?followup=1" target="_blank">View follow-up</a>` : ""}
                 ${p.status === "sent" && !p.followup_at ? `<button class="go" data-followup="${p.id}">Send follow-up</button>` : ""}
                 ${["sent", "replied"].includes(p.status) ? `<button data-pid="${p.id}" data-ost="won">Won</button>` : ""}
                 ${["new", "ready"].includes(p.status) ? `<button data-pid="${p.id}" data-ost="skipped">Skip</button>` : ""}
+                ${["call", "no_answer", "interested"].includes(p.status) ? `<button class="remove-row" data-pid="${p.id}" data-ost="skipped">&#10005; Remove</button>` : ""}
               </div></td>
             </tr>`;
           }).join("")
