@@ -1299,6 +1299,12 @@ app.post("/api/admin/prospects", requireAdmin, async (req, res) => {
       skipped.push({ business: lead?.business || "?", reason: p.error });
       continue;
     }
+    // Deleted earlier (do-not-contact list)? Then never again.
+    const keys = [p.email, p.domain && `d:${p.domain}`, p.phoneKey && `k:${p.phoneKey}`].filter(Boolean);
+    if ((await pool.query("SELECT 1 FROM suppressions WHERE key = ANY($1) LIMIT 1", [keys])).rows[0]) {
+      skipped.push({ business: p.data.business, reason: "removed earlier (do-not-contact list)" });
+      continue;
+    }
     // The unique indexes on email and website domain mean nobody is ever added (or emailed) twice.
     const { rows } = await pool.query(
       // Call-list businesses show up right away; email ones wait for their screenshot (status new).
@@ -1315,7 +1321,11 @@ app.post("/api/admin/prospects", requireAdmin, async (req, res) => {
 // Every website domain already in the prospect list, so the lead finder skips them.
 app.get("/api/admin/prospect-domains", requireAdmin, async (req, res) => {
   const { rows } = await pool.query("SELECT domain, phone_key FROM prospects WHERE domain IS NOT NULL OR phone_key IS NOT NULL");
-  res.json({ domains: rows.map((r) => r.domain).filter(Boolean), phones: rows.map((r) => r.phone_key).filter(Boolean) });
+  const { rows: gone } = await pool.query("SELECT key FROM suppressions WHERE key LIKE 'd:%' OR key LIKE 'k:%'");
+  res.json({
+    domains: [...rows.map((r) => r.domain), ...gone.filter((g) => g.key.startsWith("d:")).map((g) => g.key.slice(2))].filter(Boolean),
+    phones: [...rows.map((r) => r.phone_key), ...gone.filter((g) => g.key.startsWith("k:")).map((g) => g.key.slice(2))].filter(Boolean),
+  });
 });
 
 app.get("/api/admin/prospects", requireAdmin, async (req, res) => {
@@ -1323,12 +1333,14 @@ app.get("/api/admin/prospects", requireAdmin, async (req, res) => {
   // Paged: ?limit=10..500&offset=n (the admin shows 10–500 at a time).
   const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 500));
   const offset = Math.max(0, Number(req.query.offset) || 0);
+  // No status = everything still in play (finished ones have their own filters).
+  const where = status ? "WHERE status=$1" : "WHERE status NOT IN ('skipped', 'bounced', 'unsubscribed')";
   const { rows } = await pool.query(
     `SELECT id, created_at, slug, email, domain, status, prev_status, followup_at, channel, data, sent_at, sent_from, views, last_view_at, notes, shot IS NOT NULL AS has_shot
-     FROM prospects ${status ? "WHERE status=$1" : ""} ORDER BY COALESCE(sent_at, created_at) DESC LIMIT ${limit} OFFSET ${offset}`,
+     FROM prospects ${where} ORDER BY COALESCE(sent_at, created_at) DESC LIMIT ${limit} OFFSET ${offset}`,
     status ? [status] : []
   );
-  const total = (await pool.query(`SELECT count(*)::int AS n FROM prospects ${status ? "WHERE status=$1" : ""}`, status ? [status] : [])).rows[0].n;
+  const total = (await pool.query(`SELECT count(*)::int AS n FROM prospects ${where}`, status ? [status] : [])).rows[0].n;
   const counts = await pool.query("SELECT status, count(*)::int AS n FROM prospects GROUP BY status");
   const sent24 = await pool.query("SELECT count(*)::int AS n FROM prospects WHERE sent_at > now() - interval '24 hours'");
   res.json({
@@ -1402,6 +1414,35 @@ app.post("/api/admin/prospects/:id/email", requireAdmin, async (req, res) => {
   } catch (err) {
     if (err.code === "23505") return res.status(400).json({ error: "That email is already in the outreach list." });
     throw err;
+  }
+});
+
+// Deletes finished prospects (skipped, bounced, unsubscribed) and keeps only their
+// email/website/phone on the do-not-contact list. Body: { ids: [...] } or { status: "skipped" } for all.
+app.post("/api/admin/prospects/delete", requireAdmin, async (req, res) => {
+  const FINISHED = ["skipped", "bounced", "unsubscribed"];
+  const status = FINISHED.includes(req.body.status) ? req.body.status : null;
+  const ids = Array.isArray(req.body.ids) ? req.body.ids.slice(0, 2000) : [];
+  if (!status && !ids.length) return res.status(400).json({ error: "Nothing to delete." });
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const { rows } = await client.query(
+      `DELETE FROM prospects WHERE status = ANY($1) AND ${status ? "status=$2" : "id = ANY($2::uuid[])"} RETURNING email, domain, phone_key, status`,
+      [FINISHED, status || ids]
+    );
+    for (const r of rows) {
+      for (const key of [r.email, r.domain && `d:${r.domain}`, r.phone_key && `k:${r.phone_key}`].filter(Boolean)) {
+        await client.query("INSERT INTO suppressions (key, reason) VALUES ($1,$2) ON CONFLICT (key) DO NOTHING", [key, r.status]);
+      }
+    }
+    await client.query("COMMIT");
+    res.json({ deleted: rows.length });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
   }
 });
 

@@ -81,6 +81,7 @@
     #outreach-list .acts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
     #outreach-list .acts .go { background: var(--accent); border-color: var(--accent); }
     #outreach-list .acts .remove-row { color: var(--err); border-color: #fecaca; background: #fef2f2; }
+    #outreach-filters .delete-all { margin-left: auto; color: var(--err); border-color: #fecaca; background: #fef2f2; }
     .pill-undo { border: 0; cursor: pointer; font-family: inherit; }
     .pill-undo:hover { outline: 2px solid var(--ink); }
     #outreach-list .acts a, #outreach-list .acts button { font: inherit; font-size: .82rem; font-weight: 700; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--line); background: #fff; color: var(--ink); text-decoration: none; cursor: pointer; white-space: nowrap; }
@@ -422,9 +423,12 @@
         `<br>Replies and bounces are picked up from the inboxes automatically every 15 minutes${out.inboxCheckedAt ? ` (last checked ${when(out.inboxCheckedAt)})` : ""}. <button class="link-btn" id="check-inbox">Check now</button><br>` +
         (out.notReady ? ` <strong style="color:var(--err)">${esc(out.notReady)}</strong>` : "") +
         ` A sample homepage opened by the prospect counts as a view (link scanners can add a few).`;
-      document.getElementById("outreach-filters").innerHTML = [["", "All"], ...Object.entries(OSTATUS)]
+      document.getElementById("outreach-filters").innerHTML = [["", "Active"], ...Object.entries(OSTATUS)]
         .filter(([k]) => !k || out.counts[k])
-        .map(([k, label]) => `<button data-of="${k}" class="${k === ofilter ? "active" : ""}">${label}${k ? `<span class="count">${out.counts[k]}</span>` : ""}</button>`).join("");
+        .map(([k, label]) => `<button data-of="${k}" class="${k === ofilter ? "active" : ""}">${label}${k ? `<span class="count">${out.counts[k]}</span>` : ""}</button>`).join("") +
+        (["skipped", "bounced", "unsubscribed"].includes(ofilter) && out.total
+          ? `<button class="delete-all" data-delall="${ofilter}">&#128465; Delete all ${out.total} ${OSTATUS[ofilter].toLowerCase()}</button>`
+          : "");
       document.getElementById("outreach-list").innerHTML = out.prospects.length
         ? out.prospects.map((p) => {
             const d = p.data || {};
@@ -445,6 +449,7 @@
                 ${["sent", "replied"].includes(p.status) ? `<button data-pid="${p.id}" data-ost="won">Won</button>` : ""}
                 ${["new", "ready"].includes(p.status) ? `<button data-pid="${p.id}" data-ost="skipped">Skip</button>` : ""}
                 ${["call", "no_answer", "interested"].includes(p.status) ? `<button class="remove-row" data-pid="${p.id}" data-ost="skipped">&#10005; Remove</button>` : ""}
+                ${["skipped", "bounced", "unsubscribed"].includes(p.status) ? `<button class="remove-row" data-del="${p.id}" title="Delete for good (kept on the do-not-contact list so it's never added again)">&#128465; Delete</button>` : ""}
               </div></td>
             </tr>`;
           }).join("")
@@ -460,7 +465,17 @@
       note.textContent = found.length ? ` Updated: ${found.map((f) => `${f.email} (${f.kind})`).join(", ")}` : " Nothing new in the inboxes.";
       document.getElementById("check-inbox").after(note);
     });
+    async function deleteProspects(body) {
+      await fetch("/api/admin/prospects/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      loadOutreach();
+      loadCalls();
+    }
     document.getElementById("outreach-filters").addEventListener("click", (e) => {
+      const all = e.target.closest("button[data-delall]");
+      if (all) {
+        if (!confirm(`Delete every ${OSTATUS[all.dataset.delall].toLowerCase()} business from the list? Their email, website and phone stay on a hidden do-not-contact list so they're never added or emailed again. This can't be undone.`)) return;
+        return deleteProspects({ status: all.dataset.delall });
+      }
       const b = e.target.closest("button[data-of]");
       if (!b) return;
       ofilter = b.dataset.of;
@@ -468,6 +483,8 @@
       loadOutreach();
     });
     document.getElementById("outreach-list").addEventListener("click", async (e) => {
+      const del = e.target.closest("button[data-del]");
+      if (del) return deleteProspects({ ids: [del.dataset.del] });
       const undo = e.target.closest("button[data-undo]");
       if (undo) {
         await fetch(`/api/admin/prospects/${undo.dataset.undo}/undo`, { method: "POST" });
