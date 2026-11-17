@@ -9,8 +9,9 @@
 // public page (never logged in) to check for a website, an email and recent activity.
 //
 // Needs a Brave Search API key in ~/.config/edz/brave_search_key (or BRAVE_SEARCH_KEY).
-// Stops itself at BRAVE_DAILY_LIMIT (60) and BRAVE_MONTHLY_LIMIT (1800) searches,
-// counted in leads/brave-usage.log; set them to match your Brave plan.
+// Stops itself at BRAVE_DAILY_LIMIT (30) and BRAVE_MONTHLY_LIMIT (900) searches,
+// counted in leads/brave-usage.log. The Brave plan is pay-as-you-go (no monthly cap of its
+// own, per its rate-limit headers), so these limits are what keep the bill small.
 
 const fs = require("fs");
 const os = require("os");
@@ -32,8 +33,8 @@ const PASSWORD = (process.env.EDZ_ADMIN_PASSWORD || read(path.join(os.homedir(),
 const argv = process.argv.slice(2);
 // Each search returns ~15 pages, so a few searches give Grok Bot plenty to review.
 const SEARCHES = Number(argv[argv.indexOf("--searches") + 1]) || 3;
-const DAILY_LIMIT = Number(process.env.BRAVE_DAILY_LIMIT) || 60;
-const MONTHLY_LIMIT = Number(process.env.BRAVE_MONTHLY_LIMIT) || 1800;
+const DAILY_LIMIT = Number(process.env.BRAVE_DAILY_LIMIT) || 30;
+const MONTHLY_LIMIT = Number(process.env.BRAVE_MONTHLY_LIMIT) || 900;
 
 // Facebook paths that are never a business page.
 const NOT_A_PAGE = new Set(["groups", "events", "marketplace", "watch", "reel", "reels", "story.php", "permalink.php", "photo.php", "photo", "photos", "videos", "posts", "login", "login.php", "public", "hashtag", "help", "policies", "places", "sharer", "share", "dialog", "plugins", "gaming", "fundraisers", "jobs", "notes", "search"]);
