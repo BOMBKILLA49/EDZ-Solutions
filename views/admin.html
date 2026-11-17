@@ -119,7 +119,7 @@
         <form id="add-biz-form">
           <div class="row3">
             <label>Business name *<input name="business" required></label>
-            <label>Phone *<input name="phone" type="tel" placeholder="(505) 555-0123"></label>
+            <label>Phone <span class="hint">(or a Facebook link below)</span><input name="phone" type="tel" placeholder="(505) 555-0123"></label>
             <label>What they do<input name="industry" placeholder="Lawn care, roofing, bakery…"></label>
           </div>
           <div class="row3">
@@ -525,10 +525,10 @@
             return `<div class="card call-card">
               <div>
                 <strong>${esc(d.business)}</strong> <span class="meta">· ${esc([d.industry, [d.city, d.state].filter(Boolean).join(", ")].filter(Boolean).join(" · "))}</span><br>
-                <a class="phone" href="tel:+1${digits(d.phone)}">${esc(d.phone)}</a>
+                ${d.phone ? `<a class="phone" href="tel:+1${digits(d.phone)}">${esc(d.phone)}</a>` : `<div class="meta"><strong>No phone or email.</strong> Message them on Facebook.</div>`}
                 ${d.hours ? `<div class="meta">${esc(d.hours.split("\n").slice(0, 2).join(" · "))}</div>` : ""}
                 ${p.notes ? `<div class="meta">${esc(p.notes)}</div>` : ""}
-                <div class="script">"Hi, is this the owner of ${esc(d.business)}? I'm Ty with EDZ Solutions. I noticed you don't have a website, so I built one for you for free to look at. Can I text you the link?"</div>
+                ${d.phone ? `<div class="script">"Hi, is this the owner of ${esc(d.business)}? I'm Ty with EDZ Solutions. I noticed you don't have a website, so I built one for you for free to look at. Can I text you the link?"</div>` : ""}
               </div>
               <div class="acts">
                 <a href="/p/${p.slug}?admin=1" target="_blank">Their sample site</a>
@@ -536,12 +536,12 @@
                 ${d.facebookUrl ? `<a href="${esc(d.facebookUrl)}" target="_blank" rel="noopener">Facebook</a>` : ""}
                 ${d.yelpUrl ? `<a href="${esc(d.yelpUrl)}" target="_blank" rel="noopener">Yelp</a>` : ""}
                 <button data-copy="${p.id}" data-kind="fb">Copy Facebook message</button>
-                <button data-copy="${p.id}" data-kind="text">Copy text message</button>
+                ${d.phone ? `<button data-copy="${p.id}" data-kind="text">Copy text message</button>` : ""}
                 ${["call", "no_answer"].includes(p.status) ? `<button data-addemail="${p.id}">Found their email</button>` : ""}
-                ${["call", "no_answer"].includes(p.status) ? `<a class="go" href="${smsHref(d.phone, linkText(p))}" data-cid="${p.id}" data-cst="interested">Said yes: text link</a>
+                ${["call", "no_answer"].includes(p.status) ? `${d.phone ? `<a class="go" href="${smsHref(d.phone, linkText(p))}" data-cid="${p.id}" data-cst="interested">Said yes: text link</a>` : `<button class="go" data-cid="${p.id}" data-cst="interested">Messaged on Facebook</button>`}
                   <button data-cid="${p.id}" data-cst="no_answer">No answer</button>
                   <button data-cid="${p.id}" data-cst="not_interested">Not interested</button>` : ""}
-                ${p.status === "interested" ? `<a href="${smsHref(d.phone, linkText(p))}">Text link again</a><button data-cid="${p.id}" data-cst="won">Won</button><button data-cid="${p.id}" data-cst="not_interested">Not interested</button>` : ""}
+                ${p.status === "interested" ? `${d.phone ? `<a href="${smsHref(d.phone, linkText(p))}">Text link again</a>` : ""}<button data-cid="${p.id}" data-cst="won">Won</button><button data-cid="${p.id}" data-cst="not_interested">Not interested</button>` : ""}
               </div>
             </div>`;
           }).join("")

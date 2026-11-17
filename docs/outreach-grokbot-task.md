@@ -14,10 +14,16 @@ Run `cd ~/EDZ-Solutions && node scripts/outreach-daily.js` and read the `queue:`
 
 ## 1. Get candidates from the lead finder
 
-Look in `~/EDZ-Solutions/leads/` for a `candidates-*.json` file that hasn't been renamed to `.done.json`. If there isn't one, run:
+Look in `~/EDZ-Solutions/leads/` for a `candidates-*.json` file that hasn't been renamed to `.done.json`. If there isn't one, run the Google finder:
 
 ```
 cd ~/EDZ-Solutions && node scripts/find-leads.js
+```
+
+If it says the Google search limit is reached (or finds nothing), run the Facebook finder instead. It finds local businesses' Facebook pages through a web search, never through Facebook itself:
+
+```
+cd ~/EDZ-Solutions && node scripts/find-facebook-leads.js
 ```
 
 It searches Google's business listings (15 trade + city searches, about 300 businesses; it stops itself at 30 searches a day to stay in Google's free tier, so if it says the limit is reached, finish any candidates you have and stop for today), throws out chains, businesses without websites, modern sites and sites with no email, and saves the rest, already filled in with business, industry, city, state, phone, email, address, website and whyOutdated, to a new `candidates-*.json`. It already keeps `checked-domains.txt` up to date.
@@ -75,6 +81,15 @@ The lead finder also keeps businesses that have no website, or only a Facebook, 
 4. **Drop** chains, government, anything in the skip list, and businesses that look closed (Facebook page silent for 2+ years, "permanently closed" on Google).
 
 **Never send a message, friend request or comment on Facebook, and never log in to anything.** Only read public pages. Facebook messages are sent by hand by Ty from the call list.
+
+### Facebook finder candidates (`candidates-fb-*.json`)
+
+These come with `facebookUrl` and whatever the search snippet showed (name, maybe phone or email, maybe a `websiteHint`). Open the Facebook page, one at a time and **never logged in**. If Facebook shows a login wall, skip that business (drop it) rather than logging in.
+
+- **Real local business?** Drop personal profiles, groups, chains, anything in the skip list, and pages with no posts in the last 12 months.
+- **Do they have a website?** Check the page's About/Intro and the `websiteHint`. If they have a site, open it: if it's clearly outdated *and* shows an email, keep it as a normal outdated-site candidate (fill in `website`, set `noWebsite` to false). If it's modern, drop the business.
+- **Contact:** fill in `phone` and `email` if the page shows them (`emailSource`: "your Facebook page"). Keep the business even with **no phone and no email**, since Ty can message them on Facebook from the call list. That's why `facebookUrl` must always be filled in.
+- **Details:** `about`, `services` and `hours` from the page, facts only. Leave `photoUrls` and `logoUrl` empty.
 
 ## 3. Save and run
 

@@ -1212,6 +1212,25 @@ function siteDomain(url) {
   }
 }
 
+// "fb:<page>" for a Facebook page link, matching scripts/find-facebook-leads.js: the page name,
+// or people/<name>/<id>, p/<name-id>, pages/<name>/<id>, profile.php?id=<id>.
+function facebookKey(raw) {
+  let u;
+  try {
+    u = new URL(raw);
+  } catch {
+    return null;
+  }
+  const parts = u.pathname.split("/").filter(Boolean);
+  if (!parts.length) return null;
+  const page = parts[0] === "profile.php" ? `profile.php?id=${u.searchParams.get("id") || ""}`
+    : parts[0] === "people" ? parts.slice(0, 3).join("/")
+    : parts[0] === "pages" ? parts.slice(0, 3).join("/")
+    : parts[0] === "p" ? parts.slice(0, 2).join("/")
+    : parts[0];
+  return `fb:${page.toLowerCase()}`;
+}
+
 // One lead from Grok Bot → the row to insert, or { error }. Only facts from their site are kept.
 function prospectFromLead(lead) {
   const l = lead || {};
@@ -1253,10 +1272,14 @@ function prospectFromLead(lead) {
   if (email && !hasEmail) return { error: "email doesn't look valid" };
   const domain = data.website ? siteDomain(data.website) : null;
   if (data.website && !domain) return { error: "website address doesn't look valid" };
-  if (!hasEmail && phoneKey.length !== 10) return { error: "no email and no 10-digit phone" };
+  // A Facebook page alone is enough for the call list (you message them there by hand).
+  const fbKey = data.facebookUrl ? facebookKey(data.facebookUrl) : null;
+  if (!hasEmail && phoneKey.length !== 10 && !fbKey) return { error: "no email, no 10-digit phone and no Facebook page" };
   if (!hasEmail && domain) return { error: "has a website but no email (skip it)" };
   const slug = `${slugify(`${data.business} ${data.city}`)}-${crypto.randomBytes(2).toString("hex")}`;
-  return { slug, email: hasEmail ? email : null, domain, data, channel: hasEmail ? "email" : "call", phoneKey: domain ? null : phoneKey || null };
+  // phone_key dedupes businesses without a website: by phone, or by Facebook page when there's no phone.
+  const dedupeKey = domain ? null : phoneKey.length === 10 ? phoneKey : fbKey;
+  return { slug, email: hasEmail ? email : null, domain, data, channel: hasEmail ? "email" : "call", phoneKey: dedupeKey };
 }
 
 app.post("/api/admin/prospects", requireAdmin, async (req, res) => {
