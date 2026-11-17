@@ -576,7 +576,8 @@
                 ${["call", "no_answer"].includes(p.status) ? `<button data-addemail="${p.id}">Found their email</button>` : ""}
                 ${["call", "no_answer"].includes(p.status) ? `${d.phone ? `<a class="go" href="${smsHref(d.phone, linkText(p))}" data-cid="${p.id}" data-cst="interested">Said yes: text link</a>` : `<button class="go" data-cid="${p.id}" data-cst="interested">Messaged on Facebook</button>`}
                   <button data-cid="${p.id}" data-cst="no_answer">No answer</button>
-                  <button data-cid="${p.id}" data-cst="not_interested">Not interested</button>` : ""}
+                  <button data-cid="${p.id}" data-cst="not_interested">Not interested</button>
+                  <button data-cid="${p.id}" data-cst="won" title="Signed up (on the phone or any other way)">Won</button>` : ""}
                 ${p.status === "interested" ? `${d.phone ? `<a href="${smsHref(d.phone, linkText(p))}">Text link again</a>` : ""}<button data-cid="${p.id}" data-cst="won">Won</button><button data-cid="${p.id}" data-cst="not_interested">Not interested</button>` : ""}
               </div>
             </div>`;
