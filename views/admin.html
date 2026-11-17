@@ -377,7 +377,8 @@
       document.getElementById("outreach-stats").innerHTML =
         `${out.sentLast24h} of ${out.dailyLimit} emails sent in the last 24 hours · ${out.queue} waiting to be emailed · ` +
         (out.sendingNow ? "sending now (weekday window)" : "outside the weekday sending window") +
-        `<br>Mailboxes: ${out.mailboxes.map((m) => `${esc(m.user)} ${m.sent24}/${m.limit}`).join(" · ") || "none"}<br>` +
+        `<br>Mailboxes: ${out.mailboxes.map((m) => `${esc(m.user)} ${m.sent24}/${m.limit}`).join(" · ") || "none"}` +
+        `<br>Replies and bounces are picked up from the inboxes automatically every 15 minutes${out.inboxCheckedAt ? ` (last checked ${when(out.inboxCheckedAt)})` : ""}. <button class="link-btn" id="check-inbox">Check now</button><br>` +
         (out.notReady ? ` <strong style="color:var(--err)">${esc(out.notReady)}</strong>` : "") +
         ` A sample homepage opened by the prospect counts as a view (link scanners can add a few).`;
       document.getElementById("outreach-filters").innerHTML = [["", "All"], ...Object.entries(OSTATUS)]
@@ -396,15 +397,23 @@
               <td><div class="acts">
                 <a href="/p/${p.slug}?admin=1" target="_blank">View homepage</a>
                 <a href="/api/admin/prospects/${p.id}/email" target="_blank">View email</a>
-                ${["sent", "ready"].includes(p.status) ? `<button data-pid="${p.id}" data-ost="replied">Replied</button>` : ""}
                 ${["sent", "replied"].includes(p.status) ? `<button data-pid="${p.id}" data-ost="won">Won</button>` : ""}
                 ${["new", "ready"].includes(p.status) ? `<button data-pid="${p.id}" data-ost="skipped">Skip</button>` : ""}
-                ${p.status === "sent" ? `<button data-pid="${p.id}" data-ost="bounced">Bounced</button><button data-pid="${p.id}" data-ost="unsubscribed">Unsub</button>` : ""}
               </div></td>
             </tr>`;
           }).join("")
         : `<tr><td colspan="5" class="empty" style="padding:24px">No prospects yet. Grok Bot adds them each day.</td></tr>`;
     }
+    document.getElementById("outreach-stats").addEventListener("click", async (e) => {
+      if (e.target.id !== "check-inbox") return;
+      e.target.textContent = "Checking…";
+      const { found } = await (await fetch("/api/admin/outreach/check-inbox", { method: "POST" })).json();
+      await loadOutreach();
+      const note = document.createElement("span");
+      note.className = "meta";
+      note.textContent = found.length ? ` Updated: ${found.map((f) => `${f.email} (${f.kind})`).join(", ")}` : " Nothing new in the inboxes.";
+      document.getElementById("check-inbox").after(note);
+    });
     document.getElementById("outreach-filters").addEventListener("click", (e) => {
       const b = e.target.closest("button[data-of]");
       if (!b) return;

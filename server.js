@@ -14,6 +14,7 @@ const { ZipWriter } = require("./lib/zip");
 const sharp = require("sharp");
 const { renderPreview, safeUrl, hexColor } = require("./lib/preview");
 const outreach = require("./lib/outreach");
+const inbox = require("./lib/inbox");
 
 const PORT = process.env.PORT || 3000;
 const SITE_URL = (process.env.SITE_URL || `http://localhost:${PORT}`).replace(/\/$/, "");
@@ -1310,6 +1311,7 @@ app.get("/api/admin/prospects", requireAdmin, async (req, res) => {
     queue: (await pool.query("SELECT count(*)::int AS n FROM prospects WHERE status IN ('new','ready') AND channel='email'")).rows[0].n,
     callList: (await pool.query("SELECT count(*)::int AS n FROM prospects WHERE status='call'")).rows[0].n,
     sendingNow: outreach.inWindow(),
+    inboxCheckedAt: (await pool.query("SELECT max(checked_at) AS t FROM inbox_state")).rows[0].t,
   });
 });
 
@@ -1344,6 +1346,11 @@ app.post("/api/admin/prospects/:id/status", requireAdmin, async (req, res) => {
   if (!PROSPECT_STATUSES.includes(status) || status === "sending") return res.status(400).json({ error: "Bad status" });
   await pool.query("UPDATE prospects SET status=$2, notes=COALESCE($3, notes) WHERE id=$1", [req.params.id, status, req.body.notes ?? null]);
   res.json({ ok: true });
+});
+
+// Checks the outreach inboxes for bounces and replies right now (the server also does it every 15 minutes).
+app.post("/api/admin/outreach/check-inbox", requireAdmin, async (req, res) => {
+  res.json({ found: await inbox.checkAll(pool) });
 });
 
 // Sends ONE email right now (ignores the weekday window; the timer below respects it).
@@ -1418,6 +1425,10 @@ migrate()
     app.listen(PORT, () => console.log(`EDZ Solutions running on ${SITE_URL}`));
     // Outreach sends on weekdays inside OUTREACH_WINDOW, one email per mailbox every 10 minutes.
     setInterval(() => outreach.tick(pool, SITE_URL).catch((e) => console.error("outreach tick failed:", e)), 10 * 60 * 1000);
+    // Bounce notices and replies in the outreach inboxes, every 15 minutes (first check a minute after start).
+    const checkInboxes = () => inbox.checkAll(pool).catch((e) => console.error("inbox check failed:", e));
+    setTimeout(checkInboxes, 60 * 1000);
+    setInterval(checkInboxes, 15 * 60 * 1000);
   })
   .catch((err) => {
     console.error("database setup failed:", err);
