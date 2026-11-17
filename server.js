@@ -1660,7 +1660,7 @@ app.get("/api/preview-info/:slug", async (req, res) => {
 
 function unsubPage(title, body) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>${title} | EDZ Solutions</title><link rel="stylesheet" href="/css/site.css"></head>
-<body style="background:var(--bg-soft)"><main class="wrap" style="max-width:560px;padding:80px 20px;text-align:center"><img src="/img/edz-logo.png?v=2" alt="EDZ Solutions" style="max-width:220px;margin:0 auto 28px;display:block"><h1 style="font-size:1.7rem">${title}</h1>${body}</main></body></html>`;
+<body style="background:var(--bg-soft)"><main class="wrap" style="max-width:560px;padding:80px 20px;text-align:center"><img src="/img/edz-logo.png?v=3" alt="EDZ Solutions" style="max-width:220px;margin:0 auto 28px;display:block"><h1 style="font-size:1.7rem">${title}</h1>${body}</main></body></html>`;
 }
 
 app.get("/u/:token", async (req, res) => {

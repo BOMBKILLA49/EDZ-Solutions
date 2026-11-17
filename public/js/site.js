@@ -22,7 +22,7 @@ const SITE = {
   const header = document.createElement("header");
   header.className = "site-header";
   header.innerHTML = `<div class="wrap">
-      <a class="brand" href="/"><img class="brand-logo" src="/img/edz-logo.png?v=2" alt="EDZ Solutions" width="155" height="40"></a>
+      <a class="brand" href="/"><img class="brand-logo" src="/img/edz-logo.png?v=3" alt="EDZ Solutions" width="238" height="40"></a>
       <button class="nav-toggle" aria-label="Menu" aria-expanded="false">&#9776;</button>
       <nav class="nav">${nav}</nav>
     </div>`;
@@ -38,7 +38,7 @@ const SITE = {
   footer.innerHTML = `<div class="wrap">
       <div class="footer-grid">
         <div>
-          <a class="brand" href="/"><img class="brand-logo" src="/img/edz-logo.png?v=2" alt="EDZ Solutions" width="155" height="40"></a>
+          <a class="brand" href="/"><img class="brand-logo" src="/img/edz-logo.png?v=3" alt="EDZ Solutions" width="238" height="40"></a>
           <p style="margin-top:14px;max-width:340px">Websites that bring in customers, and metal laser engraving built live on TikTok.</p>
         </div>
         <div><h4>Services</h4><ul>
