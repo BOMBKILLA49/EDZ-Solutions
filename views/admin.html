@@ -65,7 +65,10 @@
     .call-card .acts { display: flex; gap: 6px; flex-wrap: wrap; }
     .call-card .acts a, .call-card .acts button { font: inherit; font-size: .85rem; font-weight: 700; padding: 8px 12px; border-radius: 9px; border: 1px solid var(--line); background: #fff; color: var(--ink); text-decoration: none; cursor: pointer; white-space: nowrap; }
     .call-card .acts .go { background: var(--accent); border-color: var(--accent); }
-    .call-card .acts .remove { margin-left: auto; color: var(--err); }
+    .call-card { position: relative; }
+    .call-card .remove-x { position: absolute; top: 14px; right: 14px; font: inherit; font-size: .85rem; font-weight: 700; padding: 6px 12px; border-radius: 9px; border: 1px solid #fecaca; background: #fef2f2; color: var(--err); cursor: pointer; }
+    .call-card .remove-x:hover { background: #fee2e2; }
+    .call-card > div:first-of-type { padding-right: 110px; }
     .add-biz { margin-bottom: 18px; }
     .add-biz summary { cursor: pointer; }
     .add-biz form { margin-top: 16px; }
@@ -527,6 +530,7 @@
         ? pageSlice("calls", list).map((p) => {
             const d = p.data || {};
             return `<div class="card call-card">
+              <button class="remove-x" data-cid="${p.id}" data-cst="skipped" data-note="Removed from the call list" title="Take this business off the call list (undo from Outreach → Skipped)">&#10005; Remove</button>
               <div>
                 <strong>${esc(d.business)}</strong> <span class="meta">· ${esc([d.industry, [d.city, d.state].filter(Boolean).join(", ")].filter(Boolean).join(" · "))}</span><br>
                 ${d.phone ? `<a class="phone" href="tel:+1${digits(d.phone)}">${esc(d.phone)}</a>` : `<div class="meta"><strong>No phone or email.</strong> Message them on Facebook.</div>`}
@@ -542,7 +546,6 @@
                 <button data-copy="${p.id}" data-kind="fb">Copy Facebook message</button>
                 ${d.phone ? `<button data-copy="${p.id}" data-kind="text">Copy text message</button>` : ""}
                 ${["call", "no_answer"].includes(p.status) ? `<button data-addemail="${p.id}">Found their email</button>` : ""}
-                <button class="remove" data-cid="${p.id}" data-cst="skipped" data-note="Removed from the call list">Remove</button>
                 ${["call", "no_answer"].includes(p.status) ? `${d.phone ? `<a class="go" href="${smsHref(d.phone, linkText(p))}" data-cid="${p.id}" data-cst="interested">Said yes: text link</a>` : `<button class="go" data-cid="${p.id}" data-cst="interested">Messaged on Facebook</button>`}
                   <button data-cid="${p.id}" data-cst="no_answer">No answer</button>
                   <button data-cid="${p.id}" data-cst="not_interested">Not interested</button>` : ""}
