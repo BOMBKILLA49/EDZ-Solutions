@@ -107,7 +107,7 @@
       return;
     }
     try {
-      const p = await postJSON("/api/price", { thickness: state.thickness, finish: state.finish, qty: n, promo: state.promo, back: hasBack(), dest: state.dest });
+      const p = await postJSON("/api/price", { thickness: state.thickness, finish: state.finish, qty: n, promo: state.promo, back: hasBack(), dest: state.dest, product: wedding ? "wedding" : "business" });
       $("#back-price").textContent = `+${money(Math.round(p.frontCents * 0.25))} per card, 75% off`;
       const discounted = p.discountCents > 0;
       const ship = p.shipping;
@@ -368,6 +368,33 @@
   // ---------- AI design ----------
   const details = () => Object.fromEntries(new FormData($("#details")));
 
+  // Optional logo for the AI to place on the card (business cards only).
+  let logo = null;
+  const logoInput = document.getElementById("logo-file");
+  if (logoInput) {
+    logoInput.addEventListener("change", () => {
+      const file = logoInput.files[0];
+      logoInput.value = "";
+      if (!file) return;
+      if (!/^image\/(png|jpeg|webp)$/.test(file.type)) return showMsg($("#logo-msg"), "Use a PNG, JPG or WEBP image for your logo.", false);
+      if (file.size > 6 * 1024 * 1024) return showMsg($("#logo-msg"), "That logo is over 6 MB. Try a smaller file.", false);
+      const reader = new FileReader();
+      reader.onload = () => {
+        logo = reader.result;
+        $("#logo-thumb").src = logo;
+        $("#logo-name").textContent = file.name;
+        $("#logo-chosen").hidden = false;
+        showMsg($("#logo-msg"), "Logo added. Create your design and the AI will put it on your card.", true);
+      };
+      reader.readAsDataURL(file);
+    });
+    $("#logo-remove").addEventListener("click", () => {
+      logo = null;
+      $("#logo-chosen").hidden = true;
+      $("#logo-msg").className = "msg";
+    });
+  }
+
   document.querySelectorAll("#style-chips button").forEach((b) =>
     b.addEventListener("click", () => {
       const s = $("#style");
@@ -425,9 +452,9 @@
     }
   }
 
-  $("#generate").addEventListener("click", (e) => design({ details: details(), style: $("#style").value }, e.currentTarget));
+  $("#generate").addEventListener("click", (e) => design({ details: details(), style: $("#style").value, logo }, e.currentTarget));
   $("#new-design").addEventListener("click", (e) =>
-    design({ details: details(), style: `${$("#style").value} (try a noticeably different layout)` }, e.currentTarget)
+    design({ details: details(), style: `${$("#style").value} (try a noticeably different layout)`, logo }, e.currentTarget)
   );
   $("#apply-revision").addEventListener("click", (e) => {
     const revision = $("#revision").value.trim();

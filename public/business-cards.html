@@ -54,6 +54,14 @@
             <label>Website<input name="website" placeholder="reyesbuilds.com"></label>
           </form>
 
+          <h4 class="sub" style="margin-top:10px">Your logo <span class="hint" style="font-weight:500">(optional)</span></h4>
+          <p class="hint" style="font-size:.93rem;margin-top:-4px">Upload your logo and the AI puts it on your card in the engraving color. A <strong>PNG</strong> with a transparent or white background works best, and simple, bold logos engrave cleanest.</p>
+          <div class="logo-pick">
+            <label class="btn btn-outline" style="cursor:pointer;margin:0">&#8682; Upload logo<input type="file" id="logo-file" accept="image/png,image/jpeg,image/webp" hidden></label>
+            <div id="logo-chosen" hidden><img id="logo-thumb" alt="Your logo"><span id="logo-name"></span><button type="button" class="link-btn" id="logo-remove">Remove</button></div>
+          </div>
+          <div class="msg" id="logo-msg" role="status"></div>
+
           <h4 class="sub" style="margin-top:10px">Describe your style to AI</h4>
           <label class="sr-only" for="style">Style</label>
           <textarea id="style" placeholder="Bold &amp; industrial roofing company card with a detailed picture of a roofer at work on the right..."></textarea>

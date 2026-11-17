@@ -34,15 +34,31 @@
     .actions .btn { padding: 9px 14px; font-size: .9rem; }
     .empty { text-align: center; color: var(--muted); padding: 60px 0; }
     .inq { font-size: .93rem; }
-    .promo-form { display: grid; grid-template-columns: 1.2fr 1fr .8fr .8fr 1.4fr auto; gap: 10px; align-items: end; }
-    @media (max-width: 860px) { .promo-form { grid-template-columns: 1fr 1fr; } }
+    .promo-form { display: grid; grid-template-columns: 1.2fr 1fr .8fr .8fr 1.4fr; gap: 10px; align-items: end; }
+    .promo-form .limits { grid-column: 1 / -1; display: grid; grid-template-columns: auto repeat(4, 1fr); gap: 10px; align-items: end; background: var(--bg-soft); border-radius: 10px; padding: 12px; }
+    .promo-form .limits > .meta { align-self: center; }
+    .promo-form > button { grid-column: 1 / -1; justify-self: start; }
+    @media (max-width: 860px) { .promo-form, .promo-form .limits { grid-template-columns: 1fr 1fr; } .promo-form .limits > .meta { grid-column: 1 / -1; } }
+    .admin-tabs { display: flex; gap: 4px; flex-wrap: wrap; flex: 1; justify-content: center; }
+    .admin-tabs button { border: 0; background: transparent; color: #cbd5e1; padding: 8px 12px; border-radius: 9px; font: inherit; font-size: .92rem; font-weight: 700; cursor: pointer; }
+    .admin-tabs button.active { background: var(--accent); color: var(--ink); }
+    .admin-tabs .count { margin-left: 6px; opacity: .75; font-weight: 600; }
+    .admin-tabs .count:empty { display: none; }
+    .pane { display: none; }
+    .pane.active { display: block; }
+    .pane h2 { margin-top: 0; }
+    main .filters button { border-color: var(--line); color: var(--text); }
+    .pager { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: flex-end; margin-top: 16px; font-size: .9rem; color: var(--muted); }
+    .pager select { width: auto; padding: 6px 8px; margin: 0; }
+    .pager button { font: inherit; font-weight: 700; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line); background: #fff; cursor: pointer; }
+    .pager button:disabled { opacity: .4; cursor: default; }
     .promo-form label { margin: 0; }
     .promos { width: 100%; border-collapse: collapse; margin-top: 18px; font-size: .93rem; }
     .promos th, .promos td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); }
     .promos th { font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
     .promos code { font-weight: 700; color: var(--ink); }
     .promos tr.off td { opacity: .5; }
-    #outreach-filters button, #call-filters button { border-color: var(--line); color: var(--text); }
+
     .call-card { display: grid; grid-template-columns: 1fr auto; gap: 10px 18px; align-items: start; margin-bottom: 12px; }
     @media (max-width: 760px) { .call-card { grid-template-columns: 1fr; } }
     .call-card .phone { font-size: 1.25rem; font-weight: 800; color: var(--ink); text-decoration: none; }
@@ -59,49 +75,82 @@
 <body>
   <div class="bar">
     <div class="wrap">
-      <strong>EDZ Orders</strong>
-      <div class="filters" id="filters"></div>
+      <strong>EDZ Admin</strong>
+      <nav class="admin-tabs" id="tabs">
+        <button data-tab="orders">Orders<span class="count" id="n-orders"></span></button>
+        <button data-tab="projects">Website projects<span class="count" id="n-projects"></span></button>
+        <button data-tab="calls">Call list<span class="count" id="n-calls"></span></button>
+        <button data-tab="outreach">Outreach<span class="count" id="n-outreach"></span></button>
+        <button data-tab="inquiries">Inquiries<span class="count" id="n-inquiries"></span></button>
+        <button data-tab="promos">Promo codes</button>
+      </nav>
       <button class="btn btn-ghost" id="refresh" style="padding:7px 14px">Refresh</button>
     </div>
   </div>
 
   <main class="wrap" style="padding-top:28px;padding-bottom:60px">
-    <div id="list"></div>
-    <h2 style="margin-top:40px">Website projects</h2>
-    <div id="projects"></div>
+    <section class="pane" data-pane="orders">
+      <div class="filters" id="filters" style="margin-bottom:18px"></div>
+      <div id="list"></div>
+      <div class="pager" id="orders-pager"></div>
+    </section>
 
-    <h2 style="margin-top:40px" id="calls">Call list</h2>
-    <p class="meta" style="margin-top:-6px">Businesses with no website and no email. Call, and if they want to see it, text them the link from your phone (only after they say yes). <span id="call-count"></span></p>
-    <div class="filters" id="call-filters" style="margin-bottom:14px"></div>
-    <div id="call-list"></div>
+    <section class="pane" data-pane="projects">
+      <h2>Website projects</h2>
+      <div id="projects"></div>
+      <div class="pager" id="projects-pager"></div>
+    </section>
 
-    <h2 style="margin-top:40px" id="outreach">Outreach</h2>
-    <p class="meta" id="outreach-stats" style="margin-top:-6px"></p>
-    <div class="filters" id="outreach-filters" style="margin-bottom:14px"></div>
-    <div class="card" style="padding:0;overflow-x:auto"><table class="promos" style="margin:0"><thead><tr><th>Business</th><th>Status</th><th>Sent</th><th>Views</th><th></th></tr></thead><tbody id="outreach-list"></tbody></table></div>
+    <section class="pane" data-pane="calls">
+      <h2>Call list</h2>
+      <p class="meta" style="margin-top:-6px">Businesses with no website and no email. Call, and if they want to see it, text them the link from your phone (only after they say yes). <span id="call-count"></span></p>
+      <div class="filters" id="call-filters" style="margin-bottom:14px"></div>
+      <div id="call-list"></div>
+      <div class="pager" id="calls-pager"></div>
+    </section>
 
-    <h2 style="margin-top:40px">Promo codes</h2>
-    <div class="card">
-      <form class="promo-form" id="promo-form">
-        <label>Code<input name="code" required placeholder="SPRING20" autocomplete="off"></label>
-        <label>Type
-          <select name="kind">
-            <option value="percent">% off</option>
-            <option value="amount">$ off</option>
-            <option value="fixed_total">Set total to $</option>
-          </select>
-        </label>
-        <label>Amount<input name="value" required inputmode="decimal" placeholder="20"></label>
-        <label>Max uses<input name="maxUses" inputmode="numeric" placeholder="Unlimited"></label>
-        <label>Note<input name="note" placeholder="TikTok live special"></label>
-        <button class="btn btn-primary" type="submit">Add code</button>
-      </form>
-      <div class="msg" id="promo-msg" role="status"></div>
-      <div style="overflow-x:auto"><table class="promos"><thead><tr><th>Code</th><th>Discount</th><th>Used</th><th>Note</th><th></th></tr></thead><tbody id="promo-list"></tbody></table></div>
-    </div>
+    <section class="pane" data-pane="outreach">
+      <h2>Outreach</h2>
+      <p class="meta" id="outreach-stats" style="margin-top:-6px"></p>
+      <div class="filters" id="outreach-filters" style="margin-bottom:14px"></div>
+      <div class="card" style="padding:0;overflow-x:auto"><table class="promos" style="margin:0"><thead><tr><th>Business</th><th>Status</th><th>Sent</th><th>Views</th><th></th></tr></thead><tbody id="outreach-list"></tbody></table></div>
+      <div class="pager" id="outreach-pager"></div>
+    </section>
 
-    <h2 style="margin-top:40px">Website inquiries</h2>
-    <div id="inquiries"></div>
+    <section class="pane" data-pane="inquiries">
+      <h2>Website inquiries</h2>
+      <div id="inquiries"></div>
+      <div class="pager" id="inquiries-pager"></div>
+    </section>
+
+    <section class="pane" data-pane="promos">
+      <h2>Promo codes</h2>
+      <div class="card">
+        <form class="promo-form" id="promo-form">
+          <label>Code<input name="code" required placeholder="SPRING20" autocomplete="off"></label>
+          <label>Type
+            <select name="kind">
+              <option value="percent">% off</option>
+              <option value="amount">$ off</option>
+              <option value="fixed_total">Set total to $</option>
+            </select>
+          </label>
+          <label>Amount<input name="value" required inputmode="decimal" placeholder="20"></label>
+          <label>Max uses<input name="maxUses" inputmode="numeric" placeholder="Unlimited"></label>
+          <label>Note<input name="note" placeholder="TikTok live special"></label>
+          <div class="limits">
+            <span class="meta">Only for <span class="hint">(leave on "Any" for every order)</span></span>
+            <label>Product<select name="product"><option value="">Any</option><option value="business">Business cards</option><option value="wedding">Wedding cards</option></select></label>
+            <label>Thickness<select name="thickness" id="promo-thickness"><option value="">Any</option></select></label>
+            <label>Finish<select name="finish" id="promo-finish"><option value="">Any</option></select></label>
+            <label>Quantity<input name="qty" inputmode="numeric" placeholder="Any"></label>
+          </div>
+          <button class="btn btn-primary" type="submit">Add code</button>
+        </form>
+        <div class="msg" id="promo-msg" role="status"></div>
+        <div style="overflow-x:auto"><table class="promos"><thead><tr><th>Code</th><th>Discount</th><th>Used</th><th>Note</th><th></th></tr></thead><tbody id="promo-list"></tbody></table></div>
+      </div>
+    </section>
   </main>
 
   <script>
@@ -117,6 +166,66 @@
     const esc = (v) => String(v ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
     const money = (c) => `$${(c / 100).toFixed(2)}`;
     const when = (t) => (t ? new Date(t).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "");
+    const setCount = (id, n) => (document.getElementById(id).textContent = n ? n : "");
+
+    // ---- tabs: one section at a time; the URL hash remembers which ----
+    const TABS = ["orders", "projects", "calls", "outreach", "inquiries", "promos"];
+    function showTab(t) {
+      if (!TABS.includes(t)) t = "orders";
+      document.querySelectorAll(".pane").forEach((p) => p.classList.toggle("active", p.dataset.pane === t));
+      document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === t));
+      if (location.hash.slice(1) !== t) history.replaceState(null, "", `#${t}`);
+    }
+    document.getElementById("tabs").addEventListener("click", (e) => {
+      const b = e.target.closest("button[data-tab]");
+      if (!b) return;
+      showTab(b.dataset.tab);
+      window.scrollTo(0, 0);
+    });
+    showTab(location.hash.slice(1));
+
+    // ---- paging: "Show 10 / 20 / ... / 500" per list (the choice is remembered) ----
+    const SIZES = [10, 20, 30, 40, 50, 100, 500];
+    const pages = {};
+    function pageState(name) {
+      if (!pages[name]) {
+        let size = 20;
+        try {
+          size = Number(localStorage.getItem(`edz-admin-size-${name}`)) || 20;
+        } catch {}
+        pages[name] = { size, page: 0 };
+      }
+      return pages[name];
+    }
+    function pageSlice(name, list) {
+      const st = pageState(name);
+      st.page = Math.min(st.page, Math.max(0, Math.ceil(list.length / st.size) - 1));
+      return list.slice(st.page * st.size, (st.page + 1) * st.size);
+    }
+    function renderPager(name, total, rerender) {
+      const st = pageState(name);
+      const el = document.getElementById(`${name}-pager`);
+      if (!total) return (el.innerHTML = "");
+      const from = st.page * st.size + 1;
+      const to = Math.min(total, (st.page + 1) * st.size);
+      el.innerHTML = `<label class="meta" style="margin:0;display:flex;gap:6px;align-items:center">Show <select>${SIZES.map((n) => `<option${n === st.size ? " selected" : ""}>${n}</option>`).join("")}</select></label>
+        <span>${from}–${to} of ${total}</span>
+        <button data-dir="-1"${st.page === 0 ? " disabled" : ""}>&lsaquo; Prev</button>
+        <button data-dir="1"${to >= total ? " disabled" : ""}>Next &rsaquo;</button>`;
+      el.querySelector("select").onchange = (e) => {
+        st.size = Number(e.target.value);
+        st.page = 0;
+        try {
+          localStorage.setItem(`edz-admin-size-${name}`, st.size);
+        } catch {}
+        rerender();
+      };
+      el.querySelectorAll("button").forEach((b) => (b.onclick = () => {
+        st.page += Number(b.dataset.dir);
+        rerender();
+        document.querySelector(`[data-pane="${name}"]`).scrollIntoView();
+      }));
+    }
 
     function matches(o, f) {
       if (f === "all") return true;
@@ -148,11 +257,13 @@
       const list = data.orders.filter((o) => matches(o, filter));
       // Oldest first so the queue runs in order.
       if (filter !== "all" && filter !== "shipped") list.sort((a, b) => new Date(a.paid_at) - new Date(b.paid_at));
+      setCount("n-orders", data.orders.filter((o) => o.status === "paid").length);
+      renderPager("orders", list.length, renderOrders);
       if (!list.length) {
         document.getElementById("list").innerHTML = `<div class="empty">Nothing here right now.</div>`;
         return;
       }
-      document.getElementById("list").innerHTML = list.map((o) => {
+      document.getElementById("list").innerHTML = pageSlice("orders", list).map((o) => {
         const d = o.details || {};
         const a = o.shipping && o.shipping.address;
         const ship = a ? [o.shipping.name, a.line1, a.line2, `${a.city}, ${a.state} ${a.postal_code}`].filter(Boolean).join("\n") : "—";
@@ -192,8 +303,10 @@
     }
 
     function renderInquiries() {
+      setCount("n-inquiries", data.inquiries.length);
+      renderPager("inquiries", data.inquiries.length, renderInquiries);
       document.getElementById("inquiries").innerHTML = data.inquiries.length
-        ? data.inquiries.map(({ created_at, data: q }) => `<div class="card inq" style="margin-bottom:12px">
+        ? pageSlice("inquiries", data.inquiries).map(({ created_at, data: q }) => `<div class="card inq" style="margin-bottom:12px">
             <strong>${esc(q.name)}</strong>${q.business ? ` · ${esc(q.business)}` : ""} <span class="meta">· ${when(created_at)}</span><br>
             <span class="meta">${esc([q.email, q.phone, q.type, q.budget].filter(Boolean).join(" · "))}</span>
             ${q.message ? `<p style="margin:8px 0 0;white-space:pre-line">${esc(q.message)}</p>` : ""}
@@ -206,8 +319,10 @@
     async function loadProjects() {
       const { projects, powerFeatures } = await (await fetch("/api/admin/projects")).json();
       const feat = Object.fromEntries(powerFeatures.map((f) => [f.id, f.label]));
+      setCount("n-projects", projects.filter((p) => p.status === "new").length);
+      renderPager("projects", projects.length, loadProjects);
       document.getElementById("projects").innerHTML = projects.length
-        ? projects.map((p) => {
+        ? pageSlice("projects", projects).map((p) => {
             const d = p.data || {};
             const next = PNEXT[p.status];
             return `<div class="card" style="margin-bottom:14px">
@@ -255,7 +370,10 @@
     const OPILL = { ready: "paid", sent: "engraved", replied: "live", won: "shipped" };
     let ofilter = "";
     async function loadOutreach() {
-      const out = await (await fetch(`/api/admin/prospects${ofilter ? `?status=${ofilter}` : ""}`)).json();
+      const st = pageState("outreach");
+      const out = await (await fetch(`/api/admin/prospects?limit=${st.size}&offset=${st.page * st.size}${ofilter ? `&status=${ofilter}` : ""}`)).json();
+      setCount("n-outreach", out.counts.sent || 0);
+      renderPager("outreach", out.total, loadOutreach);
       document.getElementById("outreach-stats").innerHTML =
         `${out.sentLast24h} of ${out.dailyLimit} emails sent in the last 24 hours · ${out.queue} waiting to be emailed · ` +
         (out.sendingNow ? "sending now (weekday window)" : "outside the weekday sending window") +
@@ -291,6 +409,7 @@
       const b = e.target.closest("button[data-of]");
       if (!b) return;
       ofilter = b.dataset.of;
+      pageState("outreach").page = 0;
       loadOutreach();
     });
     document.getElementById("outreach-list").addEventListener("click", async (e) => {
@@ -327,8 +446,10 @@
       document.getElementById("call-filters").innerHTML = Object.entries(CSTATUS)
         .map(([k, label]) => `<button data-cf="${k}" class="${k === cfilter ? "active" : ""}">${label}<span class="count">${by[k].length}</span></button>`).join("");
       const list = by[cfilter];
+      setCount("n-calls", by.call.length);
+      renderPager("calls", list.length, loadCalls);
       document.getElementById("call-list").innerHTML = list.length
-        ? list.map((p) => {
+        ? pageSlice("calls", list).map((p) => {
             const d = p.data || {};
             return `<div class="card call-card">
               <div>
@@ -356,6 +477,7 @@
       const b = e.target.closest("button[data-cf]");
       if (!b) return;
       cfilter = b.dataset.cf;
+      pageState("calls").page = 0;
       loadCalls();
     });
     document.getElementById("call-list").addEventListener("click", async (e) => {
@@ -384,7 +506,8 @@
             <td>${esc(p.label)}</td>
             <td>${p.uses}${p.max_uses != null ? ` / ${p.max_uses}` : ""}</td>
             <td>${esc(p.note || "")}</td>
-            <td style="text-align:right"><button class="btn btn-outline" style="padding:6px 12px;font-size:.85rem" data-code="${esc(p.code)}" data-active="${p.active ? "" : "1"}">${p.active ? "Turn off" : "Turn on"}</button></td>
+            <td style="text-align:right;white-space:nowrap"><button class="btn btn-outline" style="padding:6px 12px;font-size:.85rem" data-code="${esc(p.code)}" data-active="${p.active ? "" : "1"}">${p.active ? "Turn off" : "Turn on"}</button>
+              <button class="btn btn-outline" style="padding:6px 12px;font-size:.85rem;color:var(--err)" data-delete="${esc(p.code)}">Delete</button></td>
           </tr>`).join("")
         : `<tr><td colspan="5" class="meta">No promo codes yet.</td></tr>`;
     }
@@ -405,7 +528,19 @@
       loadPromos();
     });
 
+    // Thickness and finish choices for "only for" limits come from the live catalog.
+    fetch("/api/catalog").then((r) => r.json()).then((c) => {
+      document.getElementById("promo-thickness").innerHTML += c.thickness.map((t) => `<option value="${t.id}">${esc(t.id)} mm</option>`).join("");
+      document.getElementById("promo-finish").innerHTML += c.finish.map((f) => `<option value="${f.id}">${esc(f.label)}</option>`).join("");
+    });
+
     document.getElementById("promo-list").addEventListener("click", async (e) => {
+      const del = e.target.closest("button[data-delete]");
+      if (del) {
+        if (!confirm(`Delete promo code ${del.dataset.delete}? Customers won't be able to use it anymore. Past orders keep their discount.`)) return;
+        await fetch(`/api/admin/promos/${encodeURIComponent(del.dataset.delete)}`, { method: "DELETE" });
+        return loadPromos();
+      }
       const b = e.target.closest("button[data-code]");
       if (!b) return;
       await fetch(`/api/admin/promos/${encodeURIComponent(b.dataset.code)}/active`, {
@@ -432,6 +567,7 @@
       const b = e.target.closest("button[data-f]");
       if (!b) return;
       filter = b.dataset.f;
+      pageState("orders").page = 0;
       renderFilters();
       renderOrders();
     });

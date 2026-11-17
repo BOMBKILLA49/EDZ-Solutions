@@ -7,7 +7,7 @@ const catalog = require("./config/catalog");
 const shipping = require("./config/shipping");
 const plans = require("./config/plans");
 const { pool, migrate } = require("./lib/db");
-const { sendAlert } = require("./lib/mailer");
+const { sendAlert, sendToCustomer } = require("./lib/mailer");
 const cardback = require("./lib/cardback");
 const { withDpi, imageMime, normalizeUrl } = cardback;
 const { ZipWriter } = require("./lib/zip");
@@ -145,12 +145,41 @@ function applyPromo(quote, promo) {
   return { subtotalCents: subtotal, discountCents: subtotal - total, totalCents: total };
 }
 
+// "0.3 mm, Gloss black, 10 cards" for a code limited to those options; "" when it fits anything.
+function promoScope(p) {
+  const t = catalog.cardThickness.find((x) => x.id === p.thickness);
+  const f = catalog.cardFinish.find((x) => x.id === p.finish);
+  return [
+    p.product === "wedding" ? "wedding cards" : p.product === "business" ? "business cards" : null,
+    t && `${t.id} mm`,
+    f && f.label,
+    p.qty && `${p.qty} cards`,
+  ].filter(Boolean).join(", ");
+}
+
 function promoLabel(p) {
   if (!p) return null;
-  if (p.kind === "percent") return `${p.value}% off`;
-  if (p.kind === "amount") return `$${(p.value / 100).toFixed(2)} off`;
-  return `Order total $${(p.value / 100).toFixed(2)}`;
+  const base = p.kind === "percent" ? `${p.value}% off` : p.kind === "amount" ? `$${(p.value / 100).toFixed(2)} off` : `Order total $${(p.value / 100).toFixed(2)}`;
+  const scope = promoScope(p);
+  return scope ? `${base} (${scope})` : base;
 }
+
+// Why a code doesn't fit this order, or null when it does.
+function promoMismatch(p, quote, product) {
+  if ((p.product && p.product !== product) || (p.thickness && p.thickness !== quote.thickness.id) || (p.finish && p.finish !== quote.finish.id) || (p.qty && p.qty !== quote.qty)) {
+    return `Promo ${p.code} is only for ${promoScope(p)}.`;
+  }
+  return null;
+}
+
+// Finds the code and checks it against this order.
+async function promoFor(raw, quote, product) {
+  const { promo, error } = await findPromo(raw);
+  if (error || !promo) return { promo: null, error };
+  const mismatch = promoMismatch(promo, quote, product);
+  return mismatch ? { promo: null, error: mismatch } : { promo };
+}
+const productOf = (body) => (isWedding(body) ? "wedding" : "business");
 
 // A "set the total" promo (like the $1 test code) covers shipping too.
 function quoteShip(dest, quote, price, promo) {
@@ -166,7 +195,7 @@ function quoteShip(dest, quote, price, promo) {
 app.post("/api/price", async (req, res) => {
   const q = catalog.quoteCard(req.body || {});
   if (!q) return res.status(400).json({ error: "Pick a thickness, finish and quantity." });
-  const { promo, error } = await findPromo(req.body.promo);
+  const { promo, error } = await promoFor(req.body.promo, q, productOf(req.body));
   const price = applyPromo(q, promo);
   const ship = quoteShip(req.body.dest || "US", q, price, promo);
   res.json({
@@ -185,11 +214,13 @@ const CARD_DPI = cardback.DPI; // 1728 px / 3.375 in
 // Dark pixels are what the laser engraves, so art is always dark on a light background.
 const ENGRAVING_RULES = `Plain white or very light background. Draw the design in black and dark gray only, in a detailed engraved style. No color.`;
 
-function designPrompt(details, style) {
-  const labels = { company: "Company", name: "Name", title: "Title", tagline: "Tagline", phone: "Phone", email: "Email", website: "Website" };
-  const text = Object.entries(labels)
+function designPrompt(details, style, hasLogo) {
+  // Values are quoted with a plain description, because "Name: ..." style lines got printed
+  // on cards word for word, labels and all.
+  const roles = { company: "the company name", name: "the person's name", title: "their job title", tagline: "the tagline", phone: "the phone number", email: "the email address", website: "the website" };
+  const text = Object.entries(roles)
     .filter(([k]) => details[k])
-    .map(([k, label]) => `${label}: ${details[k]}`)
+    .map(([k, role]) => `"${details[k]}" (${role})`)
     .join("\n");
   return `Design the FRONT of a horizontal 3.375 x 2.125 inch (credit-card size) business card that will be laser engraved on a metal card.
 
@@ -198,10 +229,11 @@ ${ENGRAVING_RULES}
 
 Put exactly this text on the card, spelled exactly as written, and nothing else for contact details:
 ${text}
+Print only the text inside the quotes. The words in parentheses just explain what each line is: never print them, and never add labels like "Name:", "Company:" or "Phone:" (small phone, email and web icons are fine).
 
 The customer's style request: ${style || "clean, modern and professional"}
 
-Do not draw a QR code or barcode. Do not use any brand logo or trademark other than this customer's own business name. Keep all text at least 6% in from every edge so nothing is cut off.`;
+Do not draw a QR code or barcode. ${hasLogo ? "Do not add any logo other than the customer's own logo described below." : "Do not use any brand logo or trademark other than this customer's own business name."} Keep all text at least 6% in from every edge so nothing is cut off.`;
 }
 
 function weddingPrompt(details, style, guestMode) {
@@ -252,13 +284,34 @@ class DesignError extends Error {
   }
 }
 
-async function runDesign({ prompt, previous, size = CARD_SIZE }) {
+// The customer's logo, as a PNG on white (engraving art is dark on white), at most 1024 px.
+// Returns null when there's no logo, or throws a DesignError for a file we can't use.
+async function logoImage(dataUrl) {
+  if (!dataUrl) return null;
+  const m = /^data:image\/(png|jpeg|webp);base64,(.*)$/s.exec(dataUrl);
+  if (!m) throw new DesignError(400, "Your logo needs to be a PNG, JPG or WEBP image.");
+  const buf = Buffer.from(m[2], "base64");
+  if (buf.length > 6 * 1024 * 1024) throw new DesignError(400, "Your logo file is over 6 MB. Try a smaller one.");
+  try {
+    return await sharp(buf).flatten({ background: "#ffffff" }).resize({ width: 1024, height: 1024, fit: "inside", withoutEnlargement: true }).png().toBuffer();
+  } catch {
+    throw new DesignError(400, "We couldn't read that logo file. Try a PNG.");
+  }
+}
+
+const LOGO_RULE = (position) => `The customer's own logo is attached as the ${position} image. Put that exact logo on the card: the same shapes and the same lettering, traced faithfully, not redrawn, restyled or replaced. Show it in the single dark engraving color on the white background, at a size where its details stay clear.`;
+
+async function runDesign({ prompt, previous, logo, size = CARD_SIZE }) {
   let result;
   const started = Date.now();
   try {
     const params = { model: IMAGE_MODEL, prompt, size, quality: "medium", output_format: "jpeg", output_compression: 90 };
-    result = previous
-      ? await openai.images.edit({ ...params, image: await OpenAI.toFile(previous, "design.jpg", { type: imageMime(previous) }) })
+    const images = [
+      previous && (await OpenAI.toFile(previous, "design.jpg", { type: imageMime(previous) })),
+      logo && (await OpenAI.toFile(logo, "logo.png", { type: "image/png" })),
+    ].filter(Boolean);
+    result = images.length
+      ? await openai.images.edit({ ...params, image: images.length === 1 ? images[0] : images })
       : await openai.images.generate(params);
   } catch (err) {
     console.error("design error:", err.status, err.code, err.message);
@@ -268,7 +321,7 @@ async function runDesign({ prompt, previous, size = CARD_SIZE }) {
     if (err.status === 429) throw new DesignError(503, "The designer is busy. Try again in a minute.");
     throw new DesignError(500, "The designer hit a snag. Please try again.");
   }
-  console.log(`design: ${previous ? "edit" : "new"} in ${((Date.now() - started) / 1000).toFixed(0)}s, usage ${JSON.stringify(result.usage)}`);
+  console.log(`design: ${previous ? "edit" : "new"}${logo ? " with logo" : ""} in ${((Date.now() - started) / 1000).toFixed(0)}s, usage ${JSON.stringify(result.usage)}`);
 
   const b64 = result.data?.[0]?.b64_json;
   if (!b64) throw new DesignError(500, "The designer hit a snag. Please try again.");
@@ -301,6 +354,14 @@ app.post("/api/design", async (req, res) => {
     return rows[0]?.image || null;
   };
 
+  let logo = null;
+  try {
+    // Revisions edit a design that already has the logo, so it's only sent for new designs.
+    if (!(req.body.previousDesignId && revision) && !wedding) logo = await logoImage(req.body.logo);
+  } catch (err) {
+    return res.status(err.status || 400).json({ error: err.message });
+  }
+
   let previous = null;
   let prompt;
   if (req.body.previousDesignId && revision) {
@@ -315,14 +376,15 @@ ${[...Object.values(details), caption].filter(Boolean).join(" | ")}${side === "b
     previous = req.body.frontDesignId ? await loadDesign(req.body.frontDesignId) : null;
     prompt = backPrompt(details, style, caption, Boolean(previous), noun);
   } else {
-    prompt = wedding ? weddingPrompt(details, style, guestMode) : designPrompt(details, style);
+    prompt = wedding ? weddingPrompt(details, style, guestMode) : designPrompt(details, style, Boolean(logo));
   }
+  if (logo) prompt += `\n\n${LOGO_RULE(previous ? "second" : "first (and only)")}`;
 
   for (const [id, job] of designJobs) if (Date.now() - job.createdAt > JOB_TTL_MS) designJobs.delete(id);
   const id = crypto.randomUUID();
   const job = { createdAt: Date.now(), status: "working" };
   designJobs.set(id, job);
-  runDesign({ prompt, previous, size: side === "back" ? "1024x1024" : CARD_SIZE }).then(
+  runDesign({ prompt, previous, logo, size: side === "back" ? "1024x1024" : CARD_SIZE }).then(
     (result) => Object.assign(job, { status: "done", result }),
     (err) => {
       if (!(err instanceof DesignError)) console.error("design save error:", err);
@@ -385,6 +447,67 @@ app.get("/api/back-image", async (req, res) => {
 
 // ---------- business card checkout ----------
 
+// Starts Stripe Checkout for a card order and saves it as pending_payment. Used by
+// /api/checkout and by account reorders. Returns the Checkout URL.
+async function startCardCheckout({ id, quote, price, promo, ship, dest, wedding, guests, font, details, watchLive, tiktok, notes,
+                                   designType, upload, backMode, back, qrUrl, customerEmail, cancelUrl }) {
+  const session = await stripe.checkout.sessions.create({
+    mode: "payment",
+    // One line for the whole set, so a discounted total never has to split into whole cents per card.
+    line_items: [
+      {
+        quantity: 1,
+        price_data: {
+          currency: "usd",
+          unit_amount: price.totalCents,
+          product_data: {
+            name: `${quote.qty} ${wedding ? (guests ? "metal wedding place cards (one per guest)" : "metal wedding cards") : "metal business cards"} — ${quote.thickness.label}, ${quote.finish.label}${back ? ", front & back" : ""}`,
+            description: [
+              watchLive ? "Engraved live on TikTok" : "Custom laser engraved",
+              promo ? `Promo ${promo.code}: ${promoLabel(promo)}` : null,
+            ].filter(Boolean).join(" · "),
+          },
+        },
+      },
+    ],
+    // Only addresses in the destination the price was quoted for.
+    shipping_address_collection: { allowed_countries: [ship.country] },
+    shipping_options: [
+      {
+        shipping_rate_data: {
+          type: "fixed_amount",
+          fixed_amount: { amount: ship.cents, currency: "usd" },
+          display_name: shipping.US_STATES_BY_WEIGHT[dest] ? `${shipping.US_STATES_BY_WEIGHT[dest].name} shipping` : ship.label,
+        },
+      },
+    ],
+    ...(!shipping.isDomestic(dest)
+      ? { custom_text: { shipping_address: { message: "International orders may owe import duties or taxes when they arrive. These are paid by the recipient." } } }
+      : {}),
+    phone_number_collection: { enabled: true },
+    client_reference_id: id,
+    metadata: { order_id: id, product: wedding ? "wedding" : "business", promo: promo?.code || "", thickness: quote.thickness.id, finish: quote.finish.id, qty: String(quote.qty), tiktok: tiktok },
+    success_url: `${SITE_URL}/order-complete?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: cancelUrl || `${SITE_URL}/${wedding ? "wedding-cards" : "business-cards"}`,
+    ...(customerEmail ? { customer_email: customerEmail } : {}),
+  });
+
+  await pool.query(
+    `INSERT INTO orders (id, stripe_session, details, thickness, finish, qty, total_cents, watch_live, tiktok, notes,
+                         design_type, upload_name, upload_mime, upload_data, promo_code, discount_cents,
+                         back_mode, back_name, back_mime, back_data, qr_url, shipping_cents, ship_dest,
+                         product, guest_names, name_font)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)`,
+    [id, session.id, details, quote.thickness.id, quote.finish.id, quote.qty, price.totalCents,
+     watchLive, tiktok, notes, designType, upload.name, upload.mime, upload.data,
+     promo?.code || null, price.discountCents,
+     backMode, back?.name || null, back?.mime || null, back?.data || null, qrUrl || null,
+     ship.cents, dest,
+     wedding ? "wedding" : "business", guests ? JSON.stringify(guests) : null, guests ? font : null]
+  );
+  return session.url;
+}
+
 app.post("/api/checkout", async (req, res) => {
   if (!stripe) return res.status(503).json({ error: "Online checkout isn't switched on yet." });
   const back = req.body.back || {};
@@ -399,7 +522,7 @@ app.post("/api/checkout", async (req, res) => {
   const quote = catalog.quoteCard({ ...req.body, qty: guests ? guests.length : req.body.qty, back: backMode !== "none" });
   if (!quote) return res.status(400).json({ error: `Pick a thickness, finish and a quantity from ${catalog.MIN_QTY} to ${catalog.MAX_QTY}.` });
 
-  const { promo, error: promoError } = await findPromo(req.body.promo);
+  const { promo, error: promoError } = await promoFor(req.body.promo, quote, wedding ? "wedding" : "business");
   if (promoError) return res.status(400).json({ error: promoError });
   const price = applyPromo(quote, promo);
   const dest = String(req.body.dest || "US");
@@ -455,60 +578,12 @@ app.post("/api/checkout", async (req, res) => {
   }
 
   try {
-    const session = await stripe.checkout.sessions.create({
-      mode: "payment",
-      // One line for the whole set, so a discounted total never has to split into whole cents per card.
-      line_items: [
-        {
-          quantity: 1,
-          price_data: {
-            currency: "usd",
-            unit_amount: price.totalCents,
-            product_data: {
-              name: `${quote.qty} ${wedding ? (guests ? "metal wedding place cards (one per guest)" : "metal wedding cards") : "metal business cards"} — ${quote.thickness.label}, ${quote.finish.label}${order.back ? ", front & back" : ""}`,
-              description: [
-                order.watchLive ? "Engraved live on TikTok" : "Custom laser engraved",
-                promo ? `Promo ${promo.code}: ${promoLabel(promo)}` : null,
-              ].filter(Boolean).join(" · "),
-            },
-          },
-        },
-      ],
-      // Only addresses in the destination the price was quoted for.
-      shipping_address_collection: { allowed_countries: [ship.country] },
-      shipping_options: [
-        {
-          shipping_rate_data: {
-            type: "fixed_amount",
-            fixed_amount: { amount: ship.cents, currency: "usd" },
-            display_name: shipping.US_STATES_BY_WEIGHT[dest] ? `${shipping.US_STATES_BY_WEIGHT[dest].name} shipping` : ship.label,
-          },
-        },
-      ],
-      ...(!shipping.isDomestic(dest)
-        ? { custom_text: { shipping_address: { message: "International orders may owe import duties or taxes when they arrive. These are paid by the recipient." } } }
-        : {}),
-      phone_number_collection: { enabled: true },
-      client_reference_id: order.id,
-      metadata: { order_id: order.id, product: wedding ? "wedding" : "business", promo: promo?.code || "", thickness: quote.thickness.id, finish: quote.finish.id, qty: String(quote.qty), tiktok: order.tiktok },
-      success_url: `${SITE_URL}/order-complete?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${SITE_URL}/${wedding ? "wedding-cards" : "business-cards"}`,
+    const url = await startCardCheckout({
+      id: order.id, quote, price, promo, ship, dest, wedding, guests, font: nameFont(req.body.font),
+      details: order.details, watchLive: order.watchLive, tiktok: order.tiktok, notes: order.notes,
+      designType: design.type, upload: order.upload, backMode, back: order.back || null, qrUrl: order.qrUrl || null,
     });
-
-    await pool.query(
-      `INSERT INTO orders (id, stripe_session, details, thickness, finish, qty, total_cents, watch_live, tiktok, notes,
-                           design_type, upload_name, upload_mime, upload_data, promo_code, discount_cents,
-                           back_mode, back_name, back_mime, back_data, qr_url, shipping_cents, ship_dest,
-                           product, guest_names, name_font)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)`,
-      [order.id, session.id, order.details, quote.thickness.id, quote.finish.id, quote.qty, price.totalCents,
-       order.watchLive, order.tiktok, order.notes, design.type, order.upload.name, order.upload.mime, order.upload.data,
-       promo?.code || null, price.discountCents,
-       backMode, order.back?.name || null, order.back?.mime || null, order.back?.data || null, order.qrUrl || null,
-       ship.cents, dest,
-       wedding ? "wedding" : "business", guests ? JSON.stringify(guests) : null, guests ? nameFont(req.body.font) : null]
-    );
-    res.json({ url: session.url });
+    res.json({ url });
   } catch (err) {
     console.error("checkout error:", err);
     res.status(500).json({ error: "Checkout couldn't start. Please try again." });
@@ -793,6 +868,164 @@ app.get("/api/project-status", async (req, res) => {
   }
 });
 
+// ---------- customer accounts (sign in with an emailed code, reorder past cards) ----------
+
+const SESSION_COOKIE = "edz_session";
+const SESSION_DAYS = 60;
+const sha256 = (v) => crypto.createHash("sha256").update(String(v)).digest("hex");
+const normEmail = (v) => clean(v, 120).toLowerCase();
+
+function cookie(req, name) {
+  const m = new RegExp(`(?:^|;\\s*)${name}=([^;]+)`).exec(req.headers.cookie || "");
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
+async function accountEmail(req) {
+  const token = cookie(req, SESSION_COOKIE);
+  if (!token) return null;
+  const { rows } = await pool.query("SELECT email FROM sessions WHERE token_hash=$1 AND expires_at > now()", [sha256(token)]);
+  return rows[0]?.email || null;
+}
+
+async function requireAccount(req, res, next) {
+  const email = await accountEmail(req).catch(() => null);
+  if (!email) return res.status(401).json({ error: "Please sign in." });
+  req.accountEmail = email;
+  next();
+}
+
+// Always answers the same way, so this can't be used to find out who has ordered.
+app.post("/api/account/code", async (req, res) => {
+  const email = normEmail(req.body.email);
+  if (!/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(email)) return res.status(400).json({ error: "Enter a valid email." });
+  if (rateLimited(`code:${req.ip}`, 8) || rateLimited(`code:${email}`, 4)) return res.status(429).json({ error: "Too many codes requested. Try again in an hour." });
+  const sent = { ok: true, message: "If you've ordered with that email, we just sent it a 6-digit code. It works for 15 minutes." };
+  const { rows } = await pool.query("SELECT 1 FROM orders WHERE lower(customer_email)=$1 AND status <> 'pending_payment' LIMIT 1", [email]);
+  if (!rows[0]) return res.json(sent);
+  const code = String(crypto.randomInt(0, 1000000)).padStart(6, "0");
+  await pool.query(
+    `INSERT INTO login_codes (email, code_hash, expires_at, attempts) VALUES ($1,$2, now() + interval '15 minutes', 0)
+     ON CONFLICT (email) DO UPDATE SET code_hash=EXCLUDED.code_hash, expires_at=EXCLUDED.expires_at, attempts=0`,
+    [email, sha256(`${email}:${code}`)]
+  );
+  await sendToCustomer({
+    to: email,
+    subject: `Your EDZ Solutions sign-in code: ${code}`,
+    text: `Your sign-in code is ${code}\n\nEnter it on ${SITE_URL}/account to see your orders and reorder your cards. It works for 15 minutes.\n\nDidn't ask for this? You can ignore this email.\n\nEDZ Solutions`,
+    html: `<div style="font:16px/1.6 Arial,sans-serif;color:#222;max-width:480px"><p>Your EDZ Solutions sign-in code is:</p><p style="font-size:32px;font-weight:800;letter-spacing:6px;color:#0f172a;margin:8px 0 16px">${code}</p><p>Enter it on <a href="${SITE_URL}/account">${SITE_URL.replace(/^https?:\/\//, "")}/account</a> to see your orders and reorder your cards. It works for 15 minutes.</p><p style="color:#888;font-size:13px">Didn't ask for this? You can ignore this email.</p></div>`,
+  }).catch((e) => console.error("sign-in code email failed:", e));
+  res.json(sent);
+});
+
+app.post("/api/account/verify", async (req, res) => {
+  const email = normEmail(req.body.email);
+  const code = String(req.body.code || "").replace(/\D/g, "");
+  const { rows } = await pool.query(
+    "UPDATE login_codes SET attempts = attempts + 1 WHERE email=$1 AND expires_at > now() RETURNING code_hash, attempts",
+    [email]
+  );
+  const row = rows[0];
+  const ok = row && row.attempts <= 5 && code.length === 6 && crypto.timingSafeEqual(Buffer.from(row.code_hash), Buffer.from(sha256(`${email}:${code}`)));
+  if (!ok) return res.status(400).json({ error: row && row.attempts > 5 ? "Too many tries. Request a new code." : "That code isn't right, or it expired." });
+  await pool.query("DELETE FROM login_codes WHERE email=$1", [email]);
+  const token = crypto.randomBytes(32).toString("hex");
+  await pool.query(`INSERT INTO sessions (token_hash, email, expires_at) VALUES ($1,$2, now() + interval '${SESSION_DAYS} days')`, [sha256(token), email]);
+  res.cookie(SESSION_COOKIE, token, { httpOnly: true, secure: SITE_URL.startsWith("https"), sameSite: "lax", maxAge: SESSION_DAYS * 864e5, path: "/" });
+  res.json({ ok: true });
+});
+
+app.post("/api/account/logout", async (req, res) => {
+  const token = cookie(req, SESSION_COOKIE);
+  if (token) await pool.query("DELETE FROM sessions WHERE token_hash=$1", [sha256(token)]);
+  res.clearCookie(SESSION_COOKIE, { path: "/" });
+  res.json({ ok: true });
+});
+
+const ORDER_STATUS_LABEL = { paid: "In the queue to engrave", engraved: "Engraved, getting ready to ship", shipped: "Shipped" };
+
+app.get("/api/account", requireAccount, async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT id, paid_at, status, product, thickness, finish, qty, total_cents, details, back_mode, guest_names, upload_mime, ship_dest
+     FROM orders WHERE lower(customer_email)=$1 AND status <> 'pending_payment' ORDER BY paid_at DESC LIMIT 200`,
+    [req.accountEmail]
+  );
+  res.json({
+    email: req.accountEmail,
+    orders: rows.map((o) => ({
+      id: o.id,
+      paidAt: o.paid_at,
+      status: ORDER_STATUS_LABEL[o.status] || "Received",
+      product: o.product,
+      thickness: o.thickness,
+      finish: o.finish,
+      finishLabel: FINISH_LABEL[o.finish] || o.finish,
+      qty: o.qty,
+      totalCents: o.total_cents,
+      title: o.details.company || o.details.name || o.details.couple || "Your cards",
+      hasBack: o.back_mode !== "none",
+      guestCount: Array.isArray(o.guest_names) ? o.guest_names.length : 0,
+      hasImage: /^image\/(png|jpeg)$/.test(o.upload_mime || ""),
+      dest: o.ship_dest || "US",
+    })),
+    thicknesses: catalog.cardThickness.map((t) => ({ id: t.id, label: t.label })),
+    finishes: catalog.cardFinish.map((f) => ({ id: f.id, label: f.label })),
+    minQty: catalog.MIN_QTY,
+    maxQty: catalog.MAX_QTY,
+  });
+});
+
+// The front design of one of their own orders (only PNG/JPG; uploaded SVG/PDF files aren't shown).
+app.get("/api/account/orders/:id/front", requireAccount, async (req, res) => {
+  const { rows } = await pool.query(
+    "SELECT upload_mime, upload_data FROM orders WHERE id=$1 AND lower(customer_email)=$2 AND status <> 'pending_payment'",
+    [req.params.id, req.accountEmail]
+  ).catch(() => ({ rows: [] }));
+  const o = rows[0];
+  if (!o || !/^image\/(png|jpeg)$/.test(o.upload_mime || "")) return res.status(404).end();
+  res.set({ "Content-Type": o.upload_mime, "Cache-Control": "private, max-age=86400" }).send(o.upload_data);
+});
+
+// Same card again: the saved design files are copied onto a new order at today's prices.
+// Quantity, thickness and finish can change; guest place cards keep their guest list.
+app.post("/api/account/reorder", requireAccount, async (req, res) => {
+  if (!stripe) return res.status(503).json({ error: "Online checkout isn't switched on yet." });
+  const { rows } = await pool.query(
+    "SELECT * FROM orders WHERE id=$1 AND lower(customer_email)=$2 AND status <> 'pending_payment'",
+    [req.body.orderId, req.accountEmail]
+  ).catch(() => ({ rows: [] }));
+  const old = rows[0];
+  if (!old) return res.status(404).json({ error: "We couldn't find that order." });
+  const guests = Array.isArray(old.guest_names) ? old.guest_names : null;
+  const wedding = old.product === "wedding";
+  const quote = catalog.quoteCard({
+    thickness: req.body.thickness || old.thickness,
+    finish: req.body.finish || old.finish,
+    qty: guests ? guests.length : req.body.qty || old.qty,
+    back: old.back_mode !== "none",
+  });
+  if (!quote) return res.status(400).json({ error: `Pick a thickness, finish and a quantity from ${catalog.MIN_QTY} to ${catalog.MAX_QTY}.` });
+  const { promo, error: promoError } = await promoFor(req.body.promo, quote, wedding ? "wedding" : "business");
+  if (promoError) return res.status(400).json({ error: promoError });
+  const price = applyPromo(quote, promo);
+  const dest = old.ship_dest || "US";
+  const ship = quoteShip(dest, quote, price, promo);
+  if (!ship) return res.status(400).json({ error: "Sorry, we can't ship there anymore." });
+  try {
+    const url = await startCardCheckout({
+      id: crypto.randomUUID(), quote, price, promo, ship, dest, wedding, guests, font: old.name_font,
+      details: old.details, watchLive: false, tiktok: old.tiktok || "",
+      notes: `Reorder of order ${old.id.slice(0, 8)} (same design)`,
+      designType: old.design_type, upload: { name: old.upload_name, mime: old.upload_mime, data: old.upload_data },
+      backMode: old.back_mode, back: old.back_data ? { name: old.back_name, mime: old.back_mime, data: old.back_data } : null,
+      qrUrl: old.qr_url, customerEmail: req.accountEmail, cancelUrl: `${SITE_URL}/account`,
+    });
+    res.json({ url });
+  } catch (err) {
+    console.error("reorder error:", err);
+    res.status(500).json({ error: "Checkout couldn't start. Please try again." });
+  }
+});
+
 // ---------- website project inquiries ----------
 
 app.post("/api/inquiry", async (req, res) => {
@@ -843,9 +1076,9 @@ app.get("/api/admin/orders", requireAdmin, async (req, res) => {
   const { rows } = await pool.query(
     `SELECT id, created_at, paid_at, status, details, thickness, finish, qty, total_cents, watch_live, tiktok, notes,
             design_type, product, guest_names, name_font, promo_code, discount_cents, back_mode, qr_url, shipping_cents, ship_dest, ship_flag, (back_data IS NOT NULL) AS has_back, back_name, back_mime, upload_name, upload_mime, customer_email, customer_name, customer_phone, shipping
-     FROM orders WHERE status <> 'pending_payment' ORDER BY paid_at DESC LIMIT 200`
+     FROM orders WHERE status <> 'pending_payment' ORDER BY paid_at DESC LIMIT 2000`
   );
-  const { rows: inquiries } = await pool.query("SELECT created_at, data FROM inquiries ORDER BY created_at DESC LIMIT 50");
+  const { rows: inquiries } = await pool.query("SELECT created_at, data FROM inquiries ORDER BY created_at DESC LIMIT 2000");
   res.json({ orders: rows, inquiries, finishes: FINISH_LABEL });
 });
 
@@ -913,8 +1146,14 @@ app.post("/api/admin/promos", requireAdmin, async (req, res) => {
   if (!Number.isFinite(value) || value < 0 || (kind === "percent" && value > 100)) return res.status(400).json({ error: "Check the discount amount." });
   if (kind === "fixed_total" && value < STRIPE_MIN_CENTS) return res.status(400).json({ error: "The lowest total Stripe can charge is $0.50." });
   if (maxUses != null && !(maxUses > 0)) return res.status(400).json({ error: "Max uses must be blank or a positive number." });
+  // Optional limits: blank means any.
+  const product = ["business", "wedding"].includes(b.product) ? b.product : null;
+  const thickness = catalog.cardThickness.some((t) => t.id === b.thickness) ? b.thickness : null;
+  const finish = catalog.cardFinish.some((f) => f.id === b.finish) ? b.finish : null;
+  const qty = b.qty === "" || b.qty == null ? null : Math.round(Number(b.qty));
+  if (qty != null && !(qty >= catalog.MIN_QTY && qty <= catalog.MAX_QTY)) return res.status(400).json({ error: `Quantity must be blank or ${catalog.MIN_QTY}–${catalog.MAX_QTY}.` });
   try {
-    await pool.query("INSERT INTO promos (code, kind, value, max_uses, note) VALUES ($1,$2,$3,$4,$5)", [code, kind, value, maxUses, clean(b.note, 120) || null]);
+    await pool.query("INSERT INTO promos (code, kind, value, max_uses, note, product, thickness, finish, qty) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)", [code, kind, value, maxUses, clean(b.note, 120) || null, product, thickness, finish, qty]);
     res.json({ ok: true });
   } catch (err) {
     if (err.code === "23505") return res.status(400).json({ error: "That code already exists." });
@@ -927,10 +1166,16 @@ app.post("/api/admin/promos/:code/active", requireAdmin, async (req, res) => {
   res.json({ ok: true });
 });
 
+// Past orders keep the code name they used, so deleting a code doesn't change them.
+app.delete("/api/admin/promos/:code", requireAdmin, async (req, res) => {
+  await pool.query("DELETE FROM promos WHERE code=$1", [req.params.code]);
+  res.json({ ok: true });
+});
+
 app.get("/api/admin/projects", requireAdmin, async (req, res) => {
   const { rows } = await pool.query(
     `SELECT id, created_at, paid_at, status, plan, stripe_subscription, data, logo_name, customer_email, customer_name
-     FROM projects WHERE status <> 'pending_payment' ORDER BY paid_at DESC LIMIT 200`
+     FROM projects WHERE status <> 'pending_payment' ORDER BY paid_at DESC LIMIT 2000`
   );
   res.json({ projects: rows.map((p) => ({ ...p, planName: plans.planById(p.plan)?.name || p.plan })), powerFeatures: plans.POWER_FEATURES });
 });
@@ -1043,15 +1288,20 @@ app.get("/api/admin/prospect-domains", requireAdmin, async (req, res) => {
 
 app.get("/api/admin/prospects", requireAdmin, async (req, res) => {
   const status = PROSPECT_STATUSES.includes(req.query.status) ? req.query.status : null;
+  // Paged: ?limit=10..500&offset=n (the admin shows 10–500 at a time).
+  const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 500));
+  const offset = Math.max(0, Number(req.query.offset) || 0);
   const { rows } = await pool.query(
     `SELECT id, created_at, slug, email, domain, status, channel, data, sent_at, sent_from, views, last_view_at, notes, shot IS NOT NULL AS has_shot
-     FROM prospects ${status ? "WHERE status=$1" : ""} ORDER BY created_at DESC LIMIT 500`,
+     FROM prospects ${status ? "WHERE status=$1" : ""} ORDER BY COALESCE(sent_at, created_at) DESC LIMIT ${limit} OFFSET ${offset}`,
     status ? [status] : []
   );
+  const total = (await pool.query(`SELECT count(*)::int AS n FROM prospects ${status ? "WHERE status=$1" : ""}`, status ? [status] : [])).rows[0].n;
   const counts = await pool.query("SELECT status, count(*)::int AS n FROM prospects GROUP BY status");
   const sent24 = await pool.query("SELECT count(*)::int AS n FROM prospects WHERE sent_at > now() - interval '24 hours'");
   res.json({
     prospects: rows,
+    total,
     counts: Object.fromEntries(counts.rows.map((r) => [r.status, r.n])),
     sentLast24h: sent24.rows[0].n,
     dailyLimit: outreach.settings().dailyLimit,

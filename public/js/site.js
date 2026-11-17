@@ -13,6 +13,7 @@ const SITE = {
     ["/laser", "Laser Engraving"],
     ["/business-cards", "Business Cards"],
     ["/live", "Live", "live-link"],
+    ["/account", "My orders"],
   ];
   const nav = links
     .map(([href, label, cls]) => `<a href="${href}" class="${cls || ""}${here === href ? " active" : ""}">${label}</a>`)
@@ -50,6 +51,7 @@ const SITE = {
           <li><a href="/#work">Our work</a></li>
           <li><a href="/live">TikTok Live</a></li>
           <li><a href="/web-design#plans">Website plans</a></li>
+          <li><a href="/account">My orders &amp; reorders</a></li>
         </ul></div>
         <div><h4>Contact</h4><ul>
           <li><a href="mailto:${SITE.email}">${SITE.email}</a></li>
