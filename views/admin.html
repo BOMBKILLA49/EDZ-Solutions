@@ -394,8 +394,8 @@
               <td class="meta">${when(p.sent_at) || "—"}${p.sent_from ? `<div>${esc(p.sent_from.split("@")[1])}</div>` : ""}</td>
               <td class="${p.views ? "hot" : "meta"}">${p.views || 0}${p.last_view_at ? `<div class="meta" style="font-weight:400">${when(p.last_view_at)}</div>` : ""}</td>
               <td><div class="acts">
-                <a href="/p/${p.slug}?admin=1" target="_blank">Homepage</a>
-                <a href="/api/admin/prospects/${p.id}/email" target="_blank">Email</a>
+                <a href="/p/${p.slug}?admin=1" target="_blank">View homepage</a>
+                <a href="/api/admin/prospects/${p.id}/email" target="_blank">View email</a>
                 ${["sent", "ready"].includes(p.status) ? `<button data-pid="${p.id}" data-ost="replied">Replied</button>` : ""}
                 ${["sent", "replied"].includes(p.status) ? `<button data-pid="${p.id}" data-ost="won">Won</button>` : ""}
                 ${["new", "ready"].includes(p.status) ? `<button data-pid="${p.id}" data-ost="skipped">Skip</button>` : ""}
