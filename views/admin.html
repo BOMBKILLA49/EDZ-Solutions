@@ -503,12 +503,15 @@
     function linkText(p) {
       const d = p.data || {};
       const hi = firstName(d.contactName) ? `Hi ${firstName(d.contactName)}` : "Hi";
-      return `${hi}, it's Ty from EDZ Solutions. Here's the website I made for ${d.business}, like we talked about:\n\n${location.origin}/p/${p.slug}?utm_source=text\n\nIf you like it, it can be live in about 3 days for $99 setup + $19/month (cancel anytime). You can get started here: ${location.origin}/start?plan=launch&preview=${p.slug}&utm_source=text\n\nWant to add your logo or change anything? Just text me back.`;
+      return `${hi}, it's Ty from EDZ Solutions. Here's the ${d.website ? "new homepage" : "website"} I made for ${d.business}, like we talked about:\n\n${location.origin}/p/${p.slug}?utm_source=text\n\nIf you like it, it can be live in about 3 days for $99 setup + $19/month (cancel anytime). You can get started here: ${location.origin}/start?plan=launch&preview=${p.slug}&utm_source=text\n\nWant to add your logo or change anything? Just text me back.`;
     }
     function fbText(p) {
       const d = p.data || {};
       const where = d.yelpUrl && !d.facebookUrl ? "on Yelp" : d.facebookUrl ? "on Facebook" : "online";
-      return `Hi! I'm Ty with EDZ Solutions. I came across ${d.business} ${where} and noticed you don't have a website yet, so I made one for you using the info from your page. It's free to look at:\n\n${location.origin}/p/${p.slug}?utm_source=facebook\n\nIf you like it, I can have it live in about 3 days. It's $99 to set up and $19/month, and you can cancel anytime. You can get started here: ${location.origin}/start?plan=launch&preview=${p.slug}&utm_source=facebook\n\nWant to add your logo or change anything? Just message me back.`;
+      const intro = d.website
+        ? `I came across ${d.business}'s website and put together a new homepage for you`
+        : `I came across ${d.business} ${where} and noticed you don't have a website yet, so I made one for you using the info from your page`;
+      return `Hi! I'm Ty with EDZ Solutions. ${intro}. It's free to look at:\n\n${location.origin}/p/${p.slug}?utm_source=facebook\n\nIf you like it, I can have it live in about 3 days. It's $99 to set up and $19/month, and you can cancel anytime. You can get started here: ${location.origin}/start?plan=launch&preview=${p.slug}&utm_source=facebook\n\nWant to add your logo or change anything? Just message me back.`;
     }
     async function loadCalls() {
       const all = await Promise.all(Object.keys(CSTATUS).map(async (k) => [k, (await (await fetch(`/api/admin/prospects?status=${k}`)).json()).prospects.filter((p) => p.channel === "call")]));
@@ -528,7 +531,7 @@
                 ${d.phone ? `<a class="phone" href="tel:+1${digits(d.phone)}">${esc(d.phone)}</a>` : `<div class="meta"><strong>No phone or email.</strong> Message them on Facebook.</div>`}
                 ${d.hours ? `<div class="meta">${esc(d.hours.split("\n").slice(0, 2).join(" · "))}</div>` : ""}
                 ${p.notes ? `<div class="meta">${esc(p.notes)}</div>` : ""}
-                ${d.phone ? `<div class="script">"Hi, is this the owner of ${esc(d.business)}? I'm Ty with EDZ Solutions. I noticed you don't have a website, so I built one for you for free to look at. Can I text you the link?"</div>` : ""}
+                ${d.phone ? `<div class="script">"Hi, is this the owner of ${esc(d.business)}? I'm Ty with EDZ Solutions. ${d.website ? "I came across your website and put together a new homepage for you" : "I noticed you don't have a website, so I built one for you"}, free to look at. Can I text you the link?"</div>` : ""}
               </div>
               <div class="acts">
                 <a href="/p/${p.slug}?admin=1" target="_blank">Their sample site</a>
