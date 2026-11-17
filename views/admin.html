@@ -68,6 +68,9 @@
     .call-card .acts .go { background: var(--accent); border-color: var(--accent); }
     #outreach-list td { vertical-align: top; }
     #outreach-list .acts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+    #outreach-list .acts .go { background: var(--accent); border-color: var(--accent); }
+    .pill-undo { border: 0; cursor: pointer; font-family: inherit; }
+    .pill-undo:hover { outline: 2px solid var(--ink); }
     #outreach-list .acts a, #outreach-list .acts button { font: inherit; font-size: .82rem; font-weight: 700; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--line); background: #fff; color: var(--ink); text-decoration: none; cursor: pointer; white-space: nowrap; }
     .hot { color: #b91c1c; font-weight: 800; }
   </style>
@@ -390,13 +393,17 @@
             return `<tr>
               <td><strong>${esc(d.business)}</strong><div class="meta">${esc([d.industry, [d.city, d.state].filter(Boolean).join(", ")].filter(Boolean).join(" · "))}</div>
                 <div class="meta">${esc(p.email || d.phone)} · ${p.domain ? `<a href="${esc(d.website)}" target="_blank" rel="noopener">${esc(p.domain)}</a>` : "no website"}</div>
-                ${p.notes ? `<div class="meta" style="color:var(--err)">${esc(p.notes)}</div>` : ""}</td>
-              <td><span class="pill ${OPILL[p.status] || ""}" style="${OPILL[p.status] ? "" : "background:var(--bg-soft);color:var(--muted)"}">${OSTATUS[p.status] || p.status}</span></td>
-              <td class="meta">${when(p.sent_at) || "—"}${p.sent_from ? `<div>${esc(p.sent_from.split("@")[1])}</div>` : ""}</td>
+                ${p.notes ? `<div class="meta" style="color:${p.status === "replied" ? "var(--ok)" : "var(--err)"}">${esc(p.notes)}</div>` : ""}</td>
+              <td>${p.prev_status && p.status !== "unsubscribed"
+                ? `<button class="pill pill-undo ${OPILL[p.status] || ""}" data-undo="${p.id}" title="Click to undo: back to ${esc(OSTATUS[p.prev_status] || p.prev_status)}">${OSTATUS[p.status] || p.status} &#8630;</button>`
+                : `<span class="pill ${OPILL[p.status] || ""}" style="${OPILL[p.status] ? "" : "background:var(--bg-soft);color:var(--muted)"}">${OSTATUS[p.status] || p.status}</span>`}</td>
+              <td class="meta">${when(p.sent_at) || "—"}${p.sent_from ? `<div>${esc(p.sent_from.split("@")[1])}</div>` : ""}${p.followup_at ? `<div style="color:var(--ink)">Followed up ${when(p.followup_at)}</div>` : ""}</td>
               <td class="${p.views ? "hot" : "meta"}">${p.views || 0}${p.last_view_at ? `<div class="meta" style="font-weight:400">${when(p.last_view_at)}</div>` : ""}</td>
               <td><div class="acts">
                 <a href="/p/${p.slug}?admin=1" target="_blank">View homepage</a>
                 <a href="/api/admin/prospects/${p.id}/email" target="_blank">View email</a>
+                ${p.email && ["sent", "replied"].includes(p.status) ? `<a href="/api/admin/prospects/${p.id}/email?followup=1" target="_blank">View follow-up</a>` : ""}
+                ${p.status === "sent" && !p.followup_at ? `<button class="go" data-followup="${p.id}">Send follow-up</button>` : ""}
                 ${["sent", "replied"].includes(p.status) ? `<button data-pid="${p.id}" data-ost="won">Won</button>` : ""}
                 ${["new", "ready"].includes(p.status) ? `<button data-pid="${p.id}" data-ost="skipped">Skip</button>` : ""}
               </div></td>
@@ -422,6 +429,25 @@
       loadOutreach();
     });
     document.getElementById("outreach-list").addEventListener("click", async (e) => {
+      const undo = e.target.closest("button[data-undo]");
+      if (undo) {
+        await fetch(`/api/admin/prospects/${undo.dataset.undo}/undo`, { method: "POST" });
+        return loadOutreach();
+      }
+      const fu = e.target.closest("button[data-followup]");
+      if (fu) {
+        fu.disabled = true;
+        fu.textContent = "Sending…";
+        const res = await fetch(`/api/admin/prospects/${fu.dataset.followup}/followup`, { method: "POST" });
+        const out = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          fu.textContent = "Send follow-up";
+          fu.disabled = false;
+          fu.insertAdjacentHTML("afterend", `<div class="meta" style="color:var(--err);flex-basis:100%;text-align:right">${esc(out.error || "Couldn't send.")}</div>`);
+          return;
+        }
+        return loadOutreach();
+      }
       const b = e.target.closest("button[data-pid]");
       if (!b) return;
       b.disabled = true;

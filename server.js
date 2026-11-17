@@ -1293,7 +1293,7 @@ app.get("/api/admin/prospects", requireAdmin, async (req, res) => {
   const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 500));
   const offset = Math.max(0, Number(req.query.offset) || 0);
   const { rows } = await pool.query(
-    `SELECT id, created_at, slug, email, domain, status, channel, data, sent_at, sent_from, views, last_view_at, notes, shot IS NOT NULL AS has_shot
+    `SELECT id, created_at, slug, email, domain, status, prev_status, followup_at, channel, data, sent_at, sent_from, views, last_view_at, notes, shot IS NOT NULL AS has_shot
      FROM prospects ${status ? "WHERE status=$1" : ""} ORDER BY COALESCE(sent_at, created_at) DESC LIMIT ${limit} OFFSET ${offset}`,
     status ? [status] : []
   );
@@ -1337,15 +1337,36 @@ app.post("/api/admin/prospects/:id/shot", requireAdmin, express.raw({ type: "ima
 app.get("/api/admin/prospects/:id/email", requireAdmin, async (req, res) => {
   const { rows } = await pool.query("SELECT * FROM prospects WHERE id=$1", [req.params.id]).catch(() => ({ rows: [] }));
   if (!rows[0]) return res.status(404).send("No such prospect.");
-  const email = outreach.buildEmail(rows[0], SITE_URL);
+  const email = req.query.followup ? outreach.buildFollowup(rows[0], SITE_URL) : outreach.buildEmail(rows[0], SITE_URL);
   res.type("html").send(req.query.text ? `<pre>${escapeHtml(email.text)}</pre>` : email.html);
 });
 
 app.post("/api/admin/prospects/:id/status", requireAdmin, async (req, res) => {
   const status = String(req.body.status || "");
   if (!PROSPECT_STATUSES.includes(status) || status === "sending") return res.status(400).json({ error: "Bad status" });
-  await pool.query("UPDATE prospects SET status=$2, notes=COALESCE($3, notes) WHERE id=$1", [req.params.id, status, req.body.notes ?? null]);
+  // Unsubscribed is final (they asked us to stop), so it can't be changed here.
+  await pool.query(
+    "UPDATE prospects SET prev_status=status, status=$2, notes=COALESCE($3, notes) WHERE id=$1 AND status <> 'unsubscribed' AND status <> $2",
+    [req.params.id, status, req.body.notes ?? null]
+  );
   res.json({ ok: true });
+});
+
+// Puts a prospect back to the status it had before the last change (clicking its status badge).
+app.post("/api/admin/prospects/:id/undo", requireAdmin, async (req, res) => {
+  const { rows } = await pool.query(
+    `UPDATE prospects SET status=prev_status, prev_status=NULL WHERE id=$1 AND prev_status IS NOT NULL AND status <> 'unsubscribed'
+     RETURNING status`,
+    [req.params.id]
+  );
+  if (!rows[0]) return res.status(400).json({ error: "Nothing to undo." });
+  res.json({ ok: true, status: rows[0].status });
+});
+
+// The follow-up email for one business, sent right away from the mailbox that sent the first one.
+app.post("/api/admin/prospects/:id/followup", requireAdmin, async (req, res) => {
+  const out = await outreach.sendFollowup(pool, SITE_URL, req.params.id);
+  res.status(out.error ? 400 : 200).json(out);
 });
 
 // Checks the outreach inboxes for bounces and replies right now (the server also does it every 15 minutes).
