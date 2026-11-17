@@ -1228,7 +1228,9 @@ function facebookKey(raw) {
     : parts[0] === "pages" ? parts.slice(0, 3).join("/")
     : parts[0] === "p" ? parts.slice(0, 2).join("/")
     : parts[0];
-  return `fb:${page.toLowerCase()}`;
+  // Pages with a numeric id are keyed by it, so p/Name-123… and people/Name/123… match.
+  const id = /(?:^|[-/=])(\d{9,})$/.exec(page);
+  return id ? `fb:id:${id[1]}` : `fb:${page.toLowerCase()}`;
 }
 
 // One lead from Grok Bot → the row to insert, or { error }. Only facts from their site are kept.

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Finds local businesses' Facebook pages through a web search API (never Facebook itself):
-//   node scripts/find-facebook-leads.js                 20 searches like "tree service Socorro NM site:facebook.com"
+//   node scripts/find-facebook-leads.js                 3 searches like "tree service Socorro NM site:facebook.com"
 //   node scripts/find-facebook-leads.js --searches 40
 //
 // Keeps business pages only (no groups, posts, events, Marketplace), skips chains and pages
@@ -30,7 +30,8 @@ const read = (f) => {
 const KEY = (process.env.BRAVE_SEARCH_KEY || read(path.join(os.homedir(), ".config/edz/brave_search_key"))).trim();
 const PASSWORD = (process.env.EDZ_ADMIN_PASSWORD || read(path.join(os.homedir(), ".config/edz/admin_password"))).trim();
 const argv = process.argv.slice(2);
-const SEARCHES = Number(argv[argv.indexOf("--searches") + 1]) || 20;
+// Each search returns ~15 pages, so a few searches give Grok Bot plenty to review.
+const SEARCHES = Number(argv[argv.indexOf("--searches") + 1]) || 3;
 const DAILY_LIMIT = Number(process.env.BRAVE_DAILY_LIMIT) || 60;
 const MONTHLY_LIMIT = Number(process.env.BRAVE_MONTHLY_LIMIT) || 1800;
 
@@ -47,7 +48,7 @@ function pageUrl(raw) {
   }
   if (!/(^|\.)facebook\.com$/.test(u.hostname)) return null;
   const parts = u.pathname.split("/").filter(Boolean);
-  if (!parts.length || NOT_A_PAGE.has(parts[0].toLowerCase())) return null;
+  if (!parts.length || NOT_A_PAGE.has(parts[0].toLowerCase()) || (parts[0] === "pages" && parts[1] === "category")) return null;
   if (parts[0] === "profile.php") return u.searchParams.get("id") ? `https://www.facebook.com/profile.php?id=${u.searchParams.get("id")}` : null;
   if (parts[0] === "people" && parts[2]) return `https://www.facebook.com/people/${parts[1]}/${parts[2]}/`;
   if (parts[0] === "pages" && parts.length >= 3) return `https://www.facebook.com/pages/${parts[1]}/${parts[2]}`;
@@ -55,11 +56,18 @@ function pageUrl(raw) {
   return `https://www.facebook.com/${parts[0]}`;
 }
 
-// Same key the server uses: the cleaned page address, e.g. "fb:sandovaltrees" or "fb:people/joes-plumbing/100063".
-const fbKey = (url) => `fb:${url.replace(/^https:\/\/www\.facebook\.com\//, "").replace(/\/+$/, "").toLowerCase()}`;
+// Same key the server uses (facebookKey in server.js): the page's numeric id when the address
+// has one (p/Name-100067..., people/Name/100067...), else the page name: "fb:id:100067…" / "fb:sandovaltrees".
+function fbKey(url) {
+  const path = url.replace(/^https:\/\/www\.facebook\.com\//, "").replace(/\/+$/, "");
+  const id = /(?:^|[-/=])(\d{9,})$/.exec(path);
+  return id ? `fb:id:${id[1]}` : `fb:${path.toLowerCase()}`;
+}
+const FREE_MAIL = /^(gmail|googlemail|yahoo|ymail|aol|outlook|hotmail|live|msn|icloud|me|mac|comcast|att|sbcglobal|bellsouth|verizon|charter|cox|earthlink|protonmail|proton|zoho|gmx|mail)\.(com|net|es|co)$/i;
 const cleanTitle = (t) =>
   String(t || "")
     .replace(/<[^>]+>/g, "")
+    .replace(/\s*\(@[^)]*\)/g, "")
     .replace(/\s*[|\-–·]\s*(Facebook|Home|About|Reviews|Photos|Posts)\b.*$/i, "")
     .replace(/\s*\|\s*.*$/, "")
     .replace(/&amp;/g, "&")
@@ -133,9 +141,11 @@ async function knownKeys() {
       const text = [r.description, ...(r.extra_snippets || [])].join(" ").replace(/<[^>]+>/g, " ");
       const phone = (/\(?\b(\d{3})\)?[\s.-]?(\d{3})[\s.-]?(\d{4})\b/.exec(text) || []).slice(1).join("");
       const email = ((text.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi) || []).find((e) => !/facebook|fb\.com/i.test(e)) || "").toLowerCase();
-      const website = (text.match(/\b(?:https?:\/\/)?(?:www\.)?([a-z0-9-]+\.(?:com|net|org|biz|us|co))\b/gi) || []).find((d) => !/facebook|fb\.com|instagram|yelp|google/i.test(d)) || "";
-      if (!name || CHAIN.test(name)) {
-        count(name ? "chain" : "no name");
+      const website = (text.replace(/[a-z0-9._%+-]+@/gi, "@").match(/(?<!@)\b(?:https?:\/\/)?(?:www\.)?([a-z0-9-]+\.(?:com|net|org|biz|us|co))\b/gi) || [])
+        .map((d) => d.replace(/^(https?:\/\/)?(www\.)?/i, "").toLowerCase())
+        .find((d) => !/facebook|fb\.com|instagram|yelp|google/i.test(d) && !FREE_MAIL.test(d)) || "";
+      if (!name || /^facebook$/i.test(name) || CHAIN.test(name)) {
+        count(name && !/^facebook$/i.test(name) ? "chain" : "no name");
         continue;
       }
       if (known.has(key) || (phone && known.has(`tel:${phone}`))) {
@@ -166,6 +176,9 @@ async function knownKeys() {
   }
 
   if (newKeys.length) fs.appendFileSync(path.join(LEADS, "checked-facebook.txt"), newKeys.join("\n") + "\n");
+  // Easiest to reach first: with an email, then a phone, then Facebook-message only.
+  const rank = (c) => (c.email ? 0 : c.phone ? 1 : 2);
+  candidates.sort((a, b) => rank(a) - rank(b));
   const stamp = new Date().toISOString().slice(0, 16).replace(/[-:]/g, "").replace("T", "-");
   const file = path.join(LEADS, `candidates-fb-${stamp}.json`);
   fs.writeFileSync(file, JSON.stringify(candidates, null, 2));
