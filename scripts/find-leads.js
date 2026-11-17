@@ -193,9 +193,23 @@ async function pool(items, n, fn) {
   const tally = {};
   const newDomains = [];
   const newPhones = [];
+  // Saved after every search, so a crash part-way loses nothing already found.
+  const stamp = new Date().toISOString().slice(0, 16).replace(/[-:]/g, "").replace("T", "-");
+  const file = path.join(LEADS, `candidates-${stamp}.json`);
+  let savedDomains = 0;
+  let savedPhones = 0;
+  function save() {
+    if (newDomains.length > savedDomains) fs.appendFileSync(path.join(LEADS, "checked-domains.txt"), newDomains.slice(savedDomains).join("\n") + "\n");
+    if (newPhones.length > savedPhones) fs.appendFileSync(path.join(LEADS, "checked-phones.txt"), newPhones.slice(savedPhones).join("\n") + "\n");
+    savedDomains = newDomains.length;
+    savedPhones = newPhones.length;
+    // Outdated websites (with an email) first, then no-website businesses.
+    const sorted = [...candidates].sort((a, b) => (a.noWebsite ? 1 : 0) - (b.noWebsite ? 1 : 0) || (b.outdatedScore || 0) - (a.outdatedScore || 0));
+    fs.writeFileSync(file, JSON.stringify(sorted, null, 2));
+  }
   // A business's address parts and the fields every candidate shares.
   const base = (p, q) => {
-    const comp = Object.fromEntries((p.addressComponents || []).flatMap((c) => c.types.map((t) => [t, c.shortText])));
+    const comp = Object.fromEntries((p.addressComponents || []).flatMap((c) => (c.types || []).map((t) => [t, c.shortText])));
     return {
       business: p.displayName.text,
       industry: p.primaryTypeDisplayName?.text || q.split(" in ")[0].replace(/\b\w/g, (c) => c.toUpperCase()),
@@ -269,15 +283,10 @@ async function pool(items, n, fn) {
       });
     }
     console.log(`${q}: ${places.length} results, ${fresh.length} new sites, ${candidates.length} candidates so far`);
+    save();
   }
 
-  if (newDomains.length) fs.appendFileSync(path.join(LEADS, "checked-domains.txt"), newDomains.join("\n") + "\n");
-  if (newPhones.length) fs.appendFileSync(path.join(LEADS, "checked-phones.txt"), newPhones.join("\n") + "\n");
-  // Outdated websites (with an email) first, then no-website businesses.
-  candidates.sort((a, b) => (a.noWebsite ? 1 : 0) - (b.noWebsite ? 1 : 0) || (b.outdatedScore || 0) - (a.outdatedScore || 0));
-  const stamp = new Date().toISOString().slice(0, 16).replace(/[-:]/g, "").replace("T", "-");
-  const file = path.join(LEADS, `candidates-${stamp}.json`);
-  fs.writeFileSync(file, JSON.stringify(candidates, null, 2));
+  save();
   const noSite = candidates.filter((c) => c.noWebsite).length;
   console.log(`\n${queries.length} searches, ${newDomains.length} new websites checked, ${candidates.length - noSite} outdated-site + ${noSite} no-website candidates → ${path.relative(ROOT, file)}`);
   console.log(`skipped: ${Object.entries(tally).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(", ")}`);
