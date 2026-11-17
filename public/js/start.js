@@ -64,9 +64,61 @@
     if (!file) return;
     if (file.size > 5 * 1024 * 1024) return showMsg($("#msg"), "That logo is over 5 MB.", false);
     const reader = new FileReader();
-    reader.onload = () => (logo = { name: file.name, dataUrl: reader.result });
+    reader.onload = () => {
+      logo = { name: file.name, dataUrl: reader.result };
+      schedulePreview();
+    };
     reader.readAsDataURL(file);
   });
+
+  // ---------- live website preview ----------
+  // Their homepage, rendered by the server from the form (plus the sample we made for them, if
+  // they came from one) and shown scaled down. Refreshes shortly after they stop typing.
+  const frame = $("#sp-frame");
+  const iframe = $("#sp-iframe");
+  let lastHtml = "";
+  function fitPreview() {
+    iframe.style.transform = `scale(${frame.clientWidth / 1280})`;
+    frame.style.height = `${Math.round(Math.min(1400, 1180) * (frame.clientWidth / 1280))}px`;
+  }
+  window.addEventListener("resize", fitPreview);
+  let timer = null;
+  let seq = 0;
+  async function refreshPreview() {
+    const mine = ++seq;
+    frame.classList.add("loading");
+    try {
+      const out = await postJSON("/api/preview-draft", { ...Object.fromEntries(new FormData($("#project"))), logo: logo?.dataUrl || "", previewSlug });
+      if (mine !== seq) return;
+      lastHtml = out.html;
+      iframe.srcdoc = out.html;
+      fitPreview();
+      // A new trade's photo is being made; show it once it's ready.
+      if (out.tradePending) setTimeout(refreshPreview, 15000);
+    } catch {
+      /* keep the last preview */
+    } finally {
+      if (mine === seq) frame.classList.remove("loading");
+    }
+  }
+  const schedulePreview = () => {
+    clearTimeout(timer);
+    timer = setTimeout(refreshPreview, 600);
+  };
+  $("#project").addEventListener("input", schedulePreview);
+  $("#project").addEventListener("change", schedulePreview);
+  $("#sp-open").addEventListener("click", () => {
+    if (!lastHtml) return;
+    const w = window.open("", "_blank");
+    if (w) {
+      w.document.open();
+      w.document.write(lastHtml.replace("<head>", `<head><base href="${location.origin}/">`));
+      w.document.close();
+    }
+  });
+  fitPreview();
+  // First render once any prefill from their sample has landed.
+  setTimeout(refreshPreview, previewSlug ? 900 : 100);
 
   $("#project").addEventListener("submit", async (e) => {
     e.preventDefault();

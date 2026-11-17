@@ -1529,6 +1529,51 @@ app.get("/p/:slug/shot.jpg", async (req, res) => {
   res.set({ "Content-Type": "image/jpeg", "Cache-Control": "public, max-age=86400" }).send(rows[0].shot);
 });
 
+// Common color words from the /start form's "Colors you like" → the site's main color.
+const COLOR_WORDS = { navy: "#1e3a8a", blue: "#1d4ed8", "sky blue": "#0284c7", teal: "#0f766e", green: "#15803d", "forest green": "#166534", lime: "#65a30d", red: "#b91c1c", maroon: "#7f1d1d", burgundy: "#7f1d1d", orange: "#ea580c", yellow: "#ca8a04", gold: "#b8860b", purple: "#6d28d9", pink: "#db2777", brown: "#78350f", tan: "#a16207", black: "#111827", gray: "#4b5563", grey: "#4b5563", silver: "#64748b" };
+function colorFromWords(text) {
+  const t = String(text || "").toLowerCase();
+  const hex = /#[0-9a-f]{6}\b/.exec(t);
+  if (hex) return hex[0];
+  const word = Object.keys(COLOR_WORDS).sort((a, b) => b.length - a.length).find((w) => new RegExp(`\\b${w}\\b`).test(t));
+  return word ? COLOR_WORDS[word] : "";
+}
+
+// Live website preview for the /start form: the sample we made for them (when they came from
+// one) with whatever they've typed on top, or built from the form alone. Nothing is saved.
+app.post("/api/preview-draft", async (req, res) => {
+  if (rateLimited(`draft:${req.ip}`, 400)) return res.status(429).json({ error: "Slow down a little." });
+  const b = req.body || {};
+  let base = {};
+  if (/^[a-z0-9-]{3,90}$/.test(b.previewSlug || "")) {
+    const { rows } = await pool.query("SELECT data FROM prospects WHERE slug=$1", [b.previewSlug]).catch(() => ({ rows: [] }));
+    base = rows[0]?.data || {};
+  }
+  const pick = (v, max) => (v === undefined || v === null || v === "" ? undefined : clean(v, max));
+  const lines = (v) => String(v || "").split(/\r?\n|,\s*/).map((x) => clean(x, 60)).filter(Boolean).slice(0, 9);
+  const d = { ...base };
+  for (const [k, v] of Object.entries({
+    business: pick(b.business, 100), industry: pick(b.industry, 60), area: pick(b.area, 160),
+    phone: pick(b.phone, 30), email: pick(b.email, 120), address: pick(b.address, 200),
+  })) if (v !== undefined) d[k] = v;
+  if (b.description) d.about = String(b.description).slice(0, 1200);
+  if (b.hours) d.hours = clean(b.hours, 300);
+  if (b.services) d.services = lines(b.services).map((name) => ({ name }));
+  const color = colorFromWords(b.colors);
+  if (color) d.color = color;
+  if (b.logo && String(b.logo).length < 7_000_000) d.logoData = String(b.logo);
+  // City for the headline: from the sample, or the first town in "Area you serve".
+  if (!d.city && d.area) d.city = clean(d.area.split(/,|\band\b/)[0], 60);
+  if (!d.business) d.business = "Your Business";
+  let heroImage = "";
+  if (!(d.photoUrls || []).length) {
+    const key = await tradeImages.hasTradeImage(pool, d.industry);
+    if (key) heroImage = `/trade-img/${key}.jpg`;
+    else if (d.industry) tradeImages.ensureTradeImage(pool, openai, IMAGE_MODEL, d.industry);
+  }
+  res.json({ html: renderPreview({ slug: "draft", data: d }, { draft: true, heroImage, claimUrl: "#" }), tradePending: !heroImage && Boolean(tradeImages.tradeKey(d.industry)) });
+});
+
 // Prefills /start when someone claims their sample homepage.
 app.get("/api/preview-info/:slug", async (req, res) => {
   const { rows } = await pool.query("SELECT data FROM prospects WHERE slug=$1", [req.params.slug]).catch(() => ({ rows: [] }));
