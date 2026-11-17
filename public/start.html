@@ -23,6 +23,11 @@
     legend { font-weight: 800; font-size: 1.15rem; color: var(--ink); margin-bottom: 12px; }
     .site-preview { margin-bottom: 22px; padding-bottom: 20px; border-bottom: 1px solid var(--line); }
     .sp-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .sp-pages { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+    .sp-pages:empty { display: none; }
+    .sp-pages button { font: inherit; font-size: .8rem; font-weight: 700; padding: 5px 10px; border-radius: 99px; border: 1px solid var(--line); background: #fff; color: var(--text); cursor: pointer; }
+    .sp-pages button.on { background: var(--ink); border-color: var(--ink); color: #fff; }
+    .sp-pages .count { font-size: .8rem; color: var(--muted); align-self: center; margin-left: 4px; }
     .sp-frame { position: relative; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: var(--bg-soft); height: 380px; }
     .sp-frame iframe { position: absolute; top: 0; left: 0; width: 1280px; height: 1400px; border: 0; transform-origin: 0 0; pointer-events: none; transition: opacity .2s; }
     .sp-frame.loading iframe { opacity: .55; }
@@ -106,6 +111,7 @@
       <aside class="card summary">
         <div class="site-preview">
           <div class="sp-head"><strong>Your website preview</strong><button type="button" class="link-btn" id="sp-open">Open full size</button></div>
+          <div class="sp-pages" id="sp-pages" role="tablist" aria-label="Pages in your plan"></div>
           <div class="sp-frame" id="sp-frame"><iframe id="sp-iframe" title="Your website preview" tabindex="-1" sandbox="allow-same-origin"></iframe></div>
           <p class="hint" id="sp-note" style="margin:8px 0 0">Updates as you fill in the form. This is your homepage; your plan's other pages are built from it.</p>
         </div>

@@ -84,13 +84,34 @@
   window.addEventListener("resize", fitPreview);
   let timer = null;
   let seq = 0;
+  let currentPage = "home";
+  $("#sp-pages").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-page]");
+    if (!b) return;
+    currentPage = b.dataset.page;
+    refreshPreview();
+  });
+  // A different plan has different pages: start again from its homepage.
+  $("#plan").addEventListener("change", () => {
+    currentPage = "home";
+    refreshPreview();
+  });
   async function refreshPreview() {
     const mine = ++seq;
     frame.classList.add("loading");
     try {
-      const out = await postJSON("/api/preview-draft", { ...Object.fromEntries(new FormData($("#project"))), logo: logo?.dataUrl || "", previewSlug });
+      const out = await postJSON("/api/preview-draft", { ...Object.fromEntries(new FormData($("#project"))), logo: logo?.dataUrl || "", previewSlug, plan: $("#plan").value, page: currentPage });
       if (mine !== seq) return;
       lastHtml = out.html;
+      currentPage = out.page;
+      // One tab per page in their plan (Launch is a single page, so no tabs).
+      const extra = { solution: "and up to 25 pages" }[$("#plan").value];
+      $("#sp-pages").innerHTML = out.pages.length > 1
+        ? out.pages.map((pg) => `<button type="button" role="tab" data-page="${pg.id}" class="${pg.id === currentPage ? "on" : ""}">${esc(pg.label)}</button>`).join("") + (extra ? `<span class="count">${extra}</span>` : "")
+        : "";
+      $("#sp-note").textContent = out.pages.length > 1
+        ? `Your plan includes ${out.pages.length} pages like these${extra ? " (up to 25)" : ""}. Tap a page to see it. Updates as you fill in the form.`
+        : "The Launch plan is one page with everything on it. Updates as you fill in the form.";
       iframe.srcdoc = out.html;
       fitPreview();
       // A new trade's photo is being made; show it once it's ready.

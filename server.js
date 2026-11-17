@@ -12,7 +12,7 @@ const cardback = require("./lib/cardback");
 const { withDpi, imageMime, normalizeUrl } = cardback;
 const { ZipWriter } = require("./lib/zip");
 const sharp = require("sharp");
-const { renderPreview, safeUrl, hexColor } = require("./lib/preview");
+const { renderPreview, planPages, safeUrl, hexColor } = require("./lib/preview");
 const outreach = require("./lib/outreach");
 const inbox = require("./lib/inbox");
 const tradeImages = require("./lib/tradeImages");
@@ -1571,7 +1571,17 @@ app.post("/api/preview-draft", async (req, res) => {
     if (key) heroImage = `/trade-img/${key}.jpg`;
     else if (d.industry) tradeImages.ensureTradeImage(pool, openai, IMAGE_MODEL, d.industry);
   }
-  res.json({ html: renderPreview({ slug: "draft", data: d }, { draft: true, heroImage, claimUrl: "#" }), tradePending: !heroImage && Boolean(tradeImages.tradeKey(d.industry)) });
+  // The plan they picked decides which pages exist; the preview shows one at a time.
+  const plan = plans.planById(b.plan) ? b.plan : "launch";
+  const feature = plans.POWER_FEATURES.some((f) => f.id === b.feature) ? b.feature : "";
+  const pages = planPages(plan, plan === "business" ? feature : "");
+  const page = pages.some((x) => x.id === b.page) ? b.page : "home";
+  res.json({
+    html: renderPreview({ slug: "draft", data: d }, { draft: true, heroImage, claimUrl: "#", plan, page, feature: plan === "business" ? feature : "" }),
+    pages: pages.map(({ id, label }) => ({ id, label })),
+    page,
+    tradePending: !heroImage && Boolean(tradeImages.tradeKey(d.industry)),
+  });
 });
 
 // Prefills /start when someone claims their sample homepage.
