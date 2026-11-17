@@ -65,6 +65,7 @@
     .call-card .acts { display: flex; gap: 6px; flex-wrap: wrap; }
     .call-card .acts a, .call-card .acts button { font: inherit; font-size: .85rem; font-weight: 700; padding: 8px 12px; border-radius: 9px; border: 1px solid var(--line); background: #fff; color: var(--ink); text-decoration: none; cursor: pointer; white-space: nowrap; }
     .call-card .acts .go { background: var(--accent); border-color: var(--accent); }
+    .call-card .acts .remove { margin-left: auto; color: var(--err); }
     .add-biz { margin-bottom: 18px; }
     .add-biz summary { cursor: pointer; }
     .add-biz form { margin-top: 16px; }
@@ -541,6 +542,7 @@
                 <button data-copy="${p.id}" data-kind="fb">Copy Facebook message</button>
                 ${d.phone ? `<button data-copy="${p.id}" data-kind="text">Copy text message</button>` : ""}
                 ${["call", "no_answer"].includes(p.status) ? `<button data-addemail="${p.id}">Found their email</button>` : ""}
+                <button class="remove" data-cid="${p.id}" data-cst="skipped" data-note="Removed from the call list">Remove</button>
                 ${["call", "no_answer"].includes(p.status) ? `${d.phone ? `<a class="go" href="${smsHref(d.phone, linkText(p))}" data-cid="${p.id}" data-cst="interested">Said yes: text link</a>` : `<button class="go" data-cid="${p.id}" data-cst="interested">Messaged on Facebook</button>`}
                   <button data-cid="${p.id}" data-cst="no_answer">No answer</button>
                   <button data-cid="${p.id}" data-cst="not_interested">Not interested</button>` : ""}
@@ -613,7 +615,7 @@
       const b = e.target.closest("[data-cid]");
       if (!b) return;
       // The text link still opens Messages; the status is saved alongside.
-      const note = b.dataset.cst === "no_answer" ? `No answer ${new Date().toLocaleDateString()}` : undefined;
+      const note = b.dataset.note || (b.dataset.cst === "no_answer" ? `No answer ${new Date().toLocaleDateString()}` : undefined);
       fetch(`/api/admin/prospects/${b.dataset.cid}/status`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

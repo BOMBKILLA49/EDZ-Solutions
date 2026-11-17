@@ -90,7 +90,7 @@ These come with `facebookUrl` and whatever the search result showed (name, trade
 
 **Before keeping any Facebook candidate, do one quick web search for its own website** (search `"Business Name" City ST`). Directory listings (Yelp, Yahoo Local, barbershops.net, BringFido and the like) don't count. If it has its own site, open it: drop the business if the site is modern. If the site is thin or outdated (a free GoDaddy/Wix page, one page with little on it), keep it with `website` filled in and `noWebsite` false, so its email says "I made you a new homepage" instead of "you don't have a website". On 2026-11-17 three of ten emailed candidates turned out to have sites this way.
 
-- **Real local business?** Drop personal profiles, groups, chains, anything in the skip list, and pages with no posts in the last 12 months.
+- **Real local business?** Drop personal profiles, groups, chains, anything in the skip list, and **pages with no posts in the last 2 years** (Ty's rule: those businesses are likely closed or not paying attention).
 - **Do they have a website?** Check the page's About/Intro and the `websiteHint`. If they have a site, open it: if it's clearly outdated *and* shows an email, keep it as a normal outdated-site candidate (fill in `website`, set `noWebsite` to false). If it's modern, drop the business.
 - **Contact:** fill in `phone` and `email` if the page shows them (`emailSource`: "your Facebook page"). Keep the business even with **no phone and no email**, since Ty can message them on Facebook from the call list. That's why `facebookUrl` must always be filled in.
 - **Details:** `about`, `services` and `hours` from the page, facts only. Leave `photoUrls` and `logoUrl` empty.

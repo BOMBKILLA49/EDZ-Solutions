@@ -35,6 +35,17 @@ const argv = process.argv.slice(2);
 const SEARCHES = Number(argv[argv.indexOf("--searches") + 1]) || 3;
 const DAILY_LIMIT = Number(process.env.BRAVE_DAILY_LIMIT) || 30;
 const MONTHLY_LIMIT = Number(process.env.BRAVE_MONTHLY_LIMIT) || 900;
+// Dormant pages: under this many likes/followers and no "talking about this" (Facebook's
+// recent-activity count) are skipped. Search results carry no post dates, so this is the signal.
+const MIN_FOLLOWERS = Number(process.env.FB_MIN_FOLLOWERS) || 50;
+
+// "684 likes · 363 talking about this", "1.2K followers" → { followers: 684, talking: 363 }.
+function pageActivity(text) {
+  const num = (s) => (s ? Math.round(parseFloat(s.replace(/,/g, "")) * (/k$/i.test(s) ? 1000 : 1)) : null);
+  const followers = Math.max(num((/([\d.,]+k?)\s+(?:likes|followers)/i.exec(text) || [])[1]) ?? -1, -1);
+  const talking = num((/([\d.,]+k?)\s+talking about this/i.exec(text) || [])[1]) || 0;
+  return { followers: followers < 0 ? null : followers, talking };
+}
 
 // Facebook paths that are never a business page.
 const NOT_A_PAGE = new Set(["groups", "events", "marketplace", "watch", "reel", "reels", "story.php", "permalink.php", "photo.php", "photo", "photos", "videos", "posts", "login", "login.php", "public", "hashtag", "help", "policies", "places", "sharer", "share", "dialog", "plugins", "gaming", "fundraisers", "jobs", "notes", "search"]);
@@ -149,6 +160,13 @@ async function knownKeys() {
         count(name && !/^facebook$/i.test(name) ? "chain" : "no name");
         continue;
       }
+      const activity = pageActivity(text);
+      if (activity.followers !== null && activity.followers < MIN_FOLLOWERS && !activity.talking) {
+        count("small or inactive page");
+        known.add(key);
+        newKeys.push(key);
+        continue;
+      }
       if (known.has(key) || (phone && known.has(`tel:${phone}`))) {
         count("already found");
         continue;
@@ -169,6 +187,8 @@ async function knownKeys() {
         noWebsite: true,
         facebookUrl: url,
         snippet: text.slice(0, 300),
+        fbFollowers: activity.followers,
+        fbTalkingAboutThis: activity.talking,
         source: `Facebook page found by web search: ${q}`,
       });
       kept++;
