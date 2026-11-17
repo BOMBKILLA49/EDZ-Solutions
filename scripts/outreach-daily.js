@@ -70,7 +70,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   }
 
   // 2. Screenshot each new prospect's sample homepage for the email.
-  const { prospects } = await api("GET", "/api/admin/prospects?status=new");
+  // New email prospects need one for the email; call-list ones for their link preview.
+  const prospects = [
+    ...(await api("GET", "/api/admin/prospects?status=new")).prospects,
+    ...(await api("GET", "/api/admin/prospects?status=call")).prospects.filter((p) => !p.has_shot),
+  ];
   for (const p of prospects) {
     const file = path.join(os.tmpdir(), `edz-shot-${p.slug}.png`);
     try {

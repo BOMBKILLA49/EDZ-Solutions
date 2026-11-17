@@ -59,13 +59,20 @@
     .promos code { font-weight: 700; color: var(--ink); }
     .promos tr.off td { opacity: .5; }
 
-    .call-card { display: grid; grid-template-columns: 1fr auto; gap: 10px 18px; align-items: start; margin-bottom: 12px; }
-    @media (max-width: 760px) { .call-card { grid-template-columns: 1fr; } }
+    .call-card { display: grid; grid-template-columns: 1fr; gap: 12px; margin-bottom: 12px; }
     .call-card .phone { font-size: 1.25rem; font-weight: 800; color: var(--ink); text-decoration: none; }
     .call-card .script { background: var(--bg-soft); border-radius: 10px; padding: 10px 12px; font-size: .9rem; margin-top: 10px; }
-    .call-card .acts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+    .call-card .acts { display: flex; gap: 6px; flex-wrap: wrap; }
     .call-card .acts a, .call-card .acts button { font: inherit; font-size: .85rem; font-weight: 700; padding: 8px 12px; border-radius: 9px; border: 1px solid var(--line); background: #fff; color: var(--ink); text-decoration: none; cursor: pointer; white-space: nowrap; }
     .call-card .acts .go { background: var(--accent); border-color: var(--accent); }
+    .add-biz { margin-bottom: 18px; }
+    .add-biz summary { cursor: pointer; }
+    .add-biz form { margin-top: 16px; }
+    .add-biz .row3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .add-biz .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    @media (max-width: 760px) { .add-biz .row3, .add-biz .row2 { grid-template-columns: 1fr; } }
+    .add-email { display: flex; gap: 6px; flex-basis: 100%; justify-content: flex-end; }
+    .add-email input { width: 220px; margin: 0; padding: 6px 10px; }
     #outreach-list td { vertical-align: top; }
     #outreach-list .acts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
     #outreach-list .acts .go { background: var(--accent); border-color: var(--accent); }
@@ -107,6 +114,32 @@
     <section class="pane" data-pane="calls">
       <h2>Call list</h2>
       <p class="meta" style="margin-top:-6px">Businesses with no website and no email. Call, and if they want to see it, text them the link from your phone (only after they say yes). <span id="call-count"></span></p>
+      <details class="card add-biz" id="add-biz">
+        <summary><strong>+ Add a business</strong> <span class="meta">you found on Facebook, Yelp or anywhere. We build their sample site right away.</span></summary>
+        <form id="add-biz-form">
+          <div class="row3">
+            <label>Business name *<input name="business" required></label>
+            <label>Phone *<input name="phone" type="tel" placeholder="(505) 555-0123"></label>
+            <label>What they do<input name="industry" placeholder="Lawn care, roofing, bakery…"></label>
+          </div>
+          <div class="row3">
+            <label>City<input name="city"></label>
+            <label>State<input name="state" maxlength="2" placeholder="NM"></label>
+            <label>Email <span class="hint">(optional, if you found one)</span><input name="email" type="email"></label>
+          </div>
+          <div class="row3">
+            <label>Facebook page link<input name="facebookUrl" placeholder="https://www.facebook.com/…"></label>
+            <label>Yelp page link<input name="yelpUrl" placeholder="https://www.yelp.com/biz/…"></label>
+            <label>Hours <span class="hint">(optional)</span><input name="hours" placeholder="Mon–Fri 8am–5pm"></label>
+          </div>
+          <div class="row2">
+            <label>Services <span class="hint">(one per line, from their page)</span><textarea name="services" rows="3"></textarea></label>
+            <label>About <span class="hint">(a few sentences from their page; facts only)</span><textarea name="about" rows="3"></textarea></label>
+          </div>
+          <button class="btn btn-primary" type="submit">Add &amp; build their sample site</button>
+          <div class="msg" id="add-biz-msg" role="status"></div>
+        </form>
+      </details>
       <div class="filters" id="call-filters" style="margin-bottom:14px"></div>
       <div id="call-list"></div>
       <div class="pager" id="calls-pager"></div>
@@ -464,15 +497,18 @@
     let cfilter = "call";
     const digits = (p) => String(p || "").replace(/\D/g, "").slice(-10);
     const smsHref = (phone, body) => `sms:+1${digits(phone)}?&body=${encodeURIComponent(body)}`;
+    // The sample-site link goes first and on its own line: Messenger and iMessage turn the
+    // first link into a preview card with a picture of their new homepage.
+    const firstName = (n) => String(n || "").trim().split(/\s+/)[0];
     function linkText(p) {
       const d = p.data || {};
-      const url = `${location.origin}/p/${p.slug}?utm_source=call`;
-      const claim = `${location.origin}/start?plan=launch&preview=${p.slug}&utm_source=call`;
-      return `Hi, it's Ty with EDZ Solutions. Here's the free website I made for ${d.business}: ${url}\n\nIf you'd like it live, it's $99 setup + $19/mo and you can start here: ${claim}\n\nAny changes you want, just reply!`;
+      const hi = firstName(d.contactName) ? `Hi ${firstName(d.contactName)}` : "Hi";
+      return `${hi}, it's Ty from EDZ Solutions. Here's the website I made for ${d.business}, like we talked about:\n\n${location.origin}/p/${p.slug}?utm_source=text\n\nIf you like it, it can be live in about 3 days for $99 setup + $19/month (cancel anytime). You can get started here: ${location.origin}/start?plan=launch&preview=${p.slug}&utm_source=text\n\nWant to add your logo or change anything? Just text me back.`;
     }
     function fbText(p) {
       const d = p.data || {};
-      return `Hi! I'm Ty with EDZ Solutions. I noticed ${d.business} doesn't have a website, so I built one for you using the info on your page. It's free to look at: ${location.origin}/p/${p.slug}?utm_source=facebook\n\nIf you like it, it can be live in about 3 days ($99 setup + $19/mo): ${location.origin}/start?plan=launch&preview=${p.slug}&utm_source=facebook`;
+      const where = d.yelpUrl && !d.facebookUrl ? "on Yelp" : d.facebookUrl ? "on Facebook" : "online";
+      return `Hi! I'm Ty with EDZ Solutions. I came across ${d.business} ${where} and noticed you don't have a website yet, so I made one for you using the info from your page. It's free to look at:\n\n${location.origin}/p/${p.slug}?utm_source=facebook\n\nIf you like it, I can have it live in about 3 days. It's $99 to set up and $19/month, and you can cancel anytime. You can get started here: ${location.origin}/start?plan=launch&preview=${p.slug}&utm_source=facebook\n\nWant to add your logo or change anything? Just message me back.`;
     }
     async function loadCalls() {
       const all = await Promise.all(Object.keys(CSTATUS).map(async (k) => [k, (await (await fetch(`/api/admin/prospects?status=${k}`)).json()).prospects.filter((p) => p.channel === "call")]));
@@ -497,7 +533,11 @@
               <div class="acts">
                 <a href="/p/${p.slug}?admin=1" target="_blank">Their sample site</a>
                 ${d.googleMapsUrl ? `<a href="${esc(d.googleMapsUrl)}" target="_blank" rel="noopener">Google listing</a>` : ""}
-                ${d.facebookUrl ? `<a href="${esc(d.facebookUrl)}" target="_blank" rel="noopener">Facebook</a><button data-copy="${p.id}">Copy Facebook message</button>` : ""}
+                ${d.facebookUrl ? `<a href="${esc(d.facebookUrl)}" target="_blank" rel="noopener">Facebook</a>` : ""}
+                ${d.yelpUrl ? `<a href="${esc(d.yelpUrl)}" target="_blank" rel="noopener">Yelp</a>` : ""}
+                <button data-copy="${p.id}" data-kind="fb">Copy Facebook message</button>
+                <button data-copy="${p.id}" data-kind="text">Copy text message</button>
+                ${["call", "no_answer"].includes(p.status) ? `<button data-addemail="${p.id}">Found their email</button>` : ""}
                 ${["call", "no_answer"].includes(p.status) ? `<a class="go" href="${smsHref(d.phone, linkText(p))}" data-cid="${p.id}" data-cst="interested">Said yes: text link</a>
                   <button data-cid="${p.id}" data-cst="no_answer">No answer</button>
                   <button data-cid="${p.id}" data-cst="not_interested">Not interested</button>` : ""}
@@ -508,6 +548,45 @@
         : `<div class="empty" style="padding:20px 0">Nothing here.</div>`;
       window._calls = Object.fromEntries(Object.values(by).flat().map((p) => [p.id, p]));
     }
+    // "Found their email": they move from the call list to the email queue.
+    document.getElementById("call-list").addEventListener("submit", async (e) => {
+      const form = e.target.closest("form[data-emailfor]");
+      if (!form) return;
+      e.preventDefault();
+      const [email, source] = form.querySelectorAll("input");
+      const res = await fetch(`/api/admin/prospects/${form.dataset.emailfor}/email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.value, source: source.value }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) return form.insertAdjacentHTML("beforeend", `<span class="meta" style="color:var(--err)">${esc(out.error || "Couldn't save.")}</span>`);
+      loadCalls();
+      loadOutreach();
+    });
+
+    document.getElementById("add-biz-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const form = e.target;
+      const f = Object.fromEntries(new FormData(form));
+      const lead = { ...f, services: f.services.split(/\r?\n/).map((x) => x.trim()).filter(Boolean), source: "Added by hand in /admin" };
+      if (lead.email) lead.emailSource = lead.facebookUrl ? "your Facebook page" : lead.yelpUrl ? "your Yelp page" : "your public business listing";
+      const msg = document.getElementById("add-biz-msg");
+      const res = await fetch("/api/admin/prospects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify([lead]) });
+      const out = await res.json().catch(() => ({}));
+      const added = out.added?.[0];
+      if (!res.ok || !added) {
+        msg.textContent = out.error || out.skipped?.[0]?.reason || "Couldn't add that business.";
+        msg.className = "msg show err";
+        return;
+      }
+      msg.innerHTML = `${esc(added.business)} added${added.channel === "email" ? " to the email queue (it's emailed after the next screenshot run on the Mac)" : " to the call list"}. <a href="/p/${added.slug}?admin=1" target="_blank">See their sample site</a>`;
+      msg.className = "msg show ok";
+      form.reset();
+      loadCalls();
+      loadOutreach();
+    });
+
     document.getElementById("call-filters").addEventListener("click", (e) => {
       const b = e.target.closest("button[data-cf]");
       if (!b) return;
@@ -518,8 +597,14 @@
     document.getElementById("call-list").addEventListener("click", async (e) => {
       const copy = e.target.closest("button[data-copy]");
       if (copy) {
-        await navigator.clipboard.writeText(fbText(window._calls[copy.dataset.copy]));
-        copy.textContent = "Copied! Paste it in Messenger";
+        const p = window._calls[copy.dataset.copy];
+        await navigator.clipboard.writeText(copy.dataset.kind === "fb" ? fbText(p) : linkText(p));
+        copy.textContent = copy.dataset.kind === "fb" ? "Copied! Paste it in Messenger" : "Copied! Paste it in a text";
+        return;
+      }
+      const addBtn = e.target.closest("button[data-addemail]");
+      if (addBtn) {
+        addBtn.outerHTML = `<form class="add-email" data-emailfor="${addBtn.dataset.addemail}"><input type="email" required placeholder="their@email.com"><input placeholder="Found on (e.g. their Facebook page)"><button class="go" type="submit">Email them</button></form>`;
         return;
       }
       const b = e.target.closest("[data-cid]");

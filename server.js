@@ -1245,6 +1245,7 @@ function prospectFromLead(lead) {
     noWebsite: !l.website,
     emailSource: clean(l.emailSource, 120), // e.g. "your Facebook page"
     facebookUrl: /^https:\/\/(www\.|m\.)?facebook\.com\//.test(l.facebookUrl || "") ? clean(l.facebookUrl, 200) : "",
+    yelpUrl: /^https:\/\/(www\.|m\.)?yelp\.com\//.test(l.yelpUrl || "") ? clean(l.yelpUrl, 200) : "",
     googleMapsUrl: /^https:\/\/(maps\.google\.com|www\.google\.com\/maps|maps\.app\.goo\.gl)/.test(l.googleMapsUrl || "") ? clean(l.googleMapsUrl, 300) : "",
   };
   if (!data.business) return { error: "no business name" };
@@ -1271,9 +1272,10 @@ app.post("/api/admin/prospects", requireAdmin, async (req, res) => {
     }
     // The unique indexes on email and website domain mean nobody is ever added (or emailed) twice.
     const { rows } = await pool.query(
-      `INSERT INTO prospects (id, slug, email, domain, data, unsub_token, channel, phone_key) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+      // Call-list businesses show up right away; email ones wait for their screenshot (status new).
+      `INSERT INTO prospects (id, slug, email, domain, data, unsub_token, channel, phone_key, status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
        ON CONFLICT DO NOTHING RETURNING id, slug`,
-      [crypto.randomUUID(), p.slug, p.email, p.domain, p.data, crypto.randomBytes(16).toString("hex"), p.channel, p.phoneKey]
+      [crypto.randomUUID(), p.slug, p.email, p.domain, p.data, crypto.randomBytes(16).toString("hex"), p.channel, p.phoneKey, p.channel === "call" ? "call" : "new"]
     );
     if (rows[0]) added.push({ id: rows[0].id, slug: rows[0].slug, business: p.data.business, channel: p.channel });
     else skipped.push({ business: p.data.business, reason: "already in the list (same email, website or phone)" });
@@ -1352,6 +1354,28 @@ app.post("/api/admin/prospects/:id/status", requireAdmin, async (req, res) => {
   res.json({ ok: true });
 });
 
+// Found their email later (call-list business): it moves to the email queue. It's emailed once
+// its screenshot exists (right away if it has one, else after the next daily script run).
+app.post("/api/admin/prospects/:id/email", requireAdmin, async (req, res) => {
+  const email = clean(req.body.email, 120).toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(email)) return res.status(400).json({ error: "That email doesn't look right." });
+  const source = clean(req.body.source, 120) || "your public business listing";
+  try {
+    const { rowCount } = await pool.query(
+      `UPDATE prospects SET email=$2, channel='email', prev_status=status,
+         status=CASE WHEN shot IS NOT NULL THEN 'ready' ELSE 'new' END,
+         data = data || jsonb_build_object('email', $2::text, 'emailSource', $3::text)
+       WHERE id=$1 AND channel='call' AND status IN ('call', 'no_answer')`,
+      [req.params.id, email, source]
+    );
+    if (!rowCount) return res.status(400).json({ error: "Only businesses still on the call list can get an email added." });
+    res.json({ ok: true });
+  } catch (err) {
+    if (err.code === "23505") return res.status(400).json({ error: "That email is already in the outreach list." });
+    throw err;
+  }
+});
+
 // Puts a prospect back to the status it had before the last change (clicking its status badge).
 app.post("/api/admin/prospects/:id/undo", requireAdmin, async (req, res) => {
   const { rows } = await pool.query(
@@ -1382,7 +1406,7 @@ app.post("/api/admin/outreach/send-next", requireAdmin, async (req, res) => {
 
 // Public sample homepage. ?shot=1 hides the EDZ banner for the screenshot; ?shot / ?admin views aren't counted.
 app.get("/p/:slug", async (req, res) => {
-  const { rows } = await pool.query("SELECT id, slug, data, sent_at FROM prospects WHERE slug=$1", [req.params.slug]).catch(() => ({ rows: [] }));
+  const { rows } = await pool.query("SELECT id, slug, data, sent_at, shot IS NOT NULL AS has_shot FROM prospects WHERE slug=$1", [req.params.slug]).catch(() => ({ rows: [] }));
   if (!rows[0]) return res.status(404).sendFile(path.join(__dirname, "public", "index.html"));
   const shot = req.query.shot === "1";
   // Email security scanners (Microsoft, Proofpoint...) open every link within a few minutes of
@@ -1391,7 +1415,17 @@ app.get("/p/:slug", async (req, res) => {
   if (!shot && !req.query.admin && !scannerWindow && !/bot|crawl|spider|preview|scan|fetch/i.test(req.headers["user-agent"] || "")) {
     pool.query("UPDATE prospects SET views=views+1, last_view_at=now() WHERE id=$1", [rows[0].id]).catch(() => {});
   }
-  res.set("X-Robots-Tag", "noindex").type("html").send(renderPreview(rows[0], { shot, claimUrl: `/start?plan=launch&preview=${rows[0].slug}` }));
+  res.set("X-Robots-Tag", "noindex").type("html").send(renderPreview(rows[0], { shot, siteUrl: SITE_URL, hasShot: rows[0].has_shot, claimUrl: `/start?plan=launch&preview=${rows[0].slug}` }));
+});
+
+// Wide 1200x630 crop of the top of their homepage: the picture Messenger, iMessage and texts
+// show when the sample-page link is pasted.
+app.get("/p/:slug/og.jpg", async (req, res) => {
+  const { rows } = await pool.query("SELECT shot FROM prospects WHERE slug=$1", [req.params.slug]).catch(() => ({ rows: [] }));
+  if (!rows[0]?.shot) return res.redirect(302, "/img/home-websites.jpg");
+  const img = await sharp(rows[0].shot).resize({ width: 1200 }).extract({ left: 0, top: 0, width: 1200, height: 630 }).jpeg({ quality: 82 }).toBuffer().catch(() => null);
+  if (!img) return res.redirect(302, "/img/home-websites.jpg");
+  res.set({ "Content-Type": "image/jpeg", "Cache-Control": "public, max-age=86400" }).send(img);
 });
 
 app.get("/p/:slug/shot.jpg", async (req, res) => {
