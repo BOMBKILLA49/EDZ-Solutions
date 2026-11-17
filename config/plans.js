@@ -102,6 +102,32 @@ const POWER_FEATURES = [
   { id: "text", label: "Click-to-text button" },
 ];
 
+// Side-by-side list for the /start plan summary: every row from every plan. Each plan's
+// value is true (has it, shown with `label`), a string (has it, worded for that plan), or
+// false (doesn't have it: shown crossed out with `label`). Wording comes from PLANS above.
+const COMPARE = [
+  { label: "Pages", launch: "1-page unique website no one else has", starter: "Up to 4 unique pages (Home, Services, About & Contact)", business: "Up to 8 pages with more detail on every service", solution: "Up to 25 pages" },
+  { label: "Your logo, hours, map and photos", launch: "Your business logo, hours, map and up to 6 photos", starter: "Your logo, hours, map and up to 15 photos", business: true, solution: true },
+  { label: "Tap-to-call button and email", launch: true, starter: true, business: true, solution: true },
+  { label: "Mobile-friendly, secure (SSL) hosting included", launch: true, starter: true, business: true, solution: true },
+  { label: "Free domain name included, or we connect yours", launch: true, starter: true, business: true, solution: true },
+  { label: "Your own colors and fonts", launch: false, starter: true, business: true, solution: true },
+  { label: "Contact form sent straight to your email", launch: false, starter: true, business: true, solution: true },
+  { label: "Local SEO setup so you show up in search", launch: false, starter: true, business: true, solution: true },
+  { label: "Changes before launch", launch: "1 revision before launch", starter: "2 revision rounds before launch", business: "Unlimited page edits, free", solution: "Unlimited edits and new features as you grow" },
+  { label: "Monthly updates", launch: "1 small text update a month (hours, prices, phone)", starter: "2 content updates a month", business: null, solution: null },
+  { label: "Local SEO pages for the towns and services you want to rank for", launch: false, starter: false, business: true, solution: true },
+  { label: "Google Business Profile set up and optimized", launch: false, starter: false, business: true, solution: true },
+  { label: "Google Ads campaign set up", launch: false, starter: false, business: "Google Ads campaign set up (if you want to advertise; ad spend is paid to Google)", solution: "Google Ads managed for you every month (ad spend is paid to Google, not EDZ)" },
+  { label: "Power feature: booking, quote form, reviews, price list or click-to-text", launch: false, starter: false, business: "One power feature of your choice (see below)", solution: "As many power features as you need" },
+  { label: "Priority support", launch: false, starter: false, business: "Same-day priority support", solution: "Instant priority support" },
+  { label: "Quarterly report: visits, calls and form leads", launch: false, starter: false, business: true, solution: true },
+  { label: "Online store or web app: payments, booking with deposits, customer accounts, price calculators, scheduling and dispatch & more", launch: false, starter: false, business: false, solution: true },
+  { label: "Backend admin page built for your business", launch: false, starter: false, business: false, solution: true },
+  { label: "Bi-Monthly strategy call", launch: false, starter: false, business: false, solution: true },
+  { label: "Free metal business cards", launch: false, starter: "20 free metal business cards", business: "50 free metal business cards", solution: "150 free metal business cards" },
+];
+
 const planById = (id) => PLANS.find((p) => p.id === id) || null;
 
-module.exports = { PLANS, POWER_FEATURES, planById };
+module.exports = { PLANS, POWER_FEATURES, COMPARE, planById };

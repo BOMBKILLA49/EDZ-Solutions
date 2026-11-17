@@ -1,6 +1,6 @@
 (async function () {
   const $ = (s) => document.querySelector(s);
-  const { plans, powerFeatures } = await (await fetch("/api/plans")).json();
+  const { plans, powerFeatures, compare } = await (await fetch("/api/plans")).json();
   const money = (c) => `$${(c / 100).toLocaleString("en-US", { maximumFractionDigits: c % 100 ? 2 : 0 })}`;
   const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
   // "50 free metal business cards" → "... ($150 value)".
@@ -41,7 +41,23 @@
     const p = plans.find((x) => x.id === $("#plan").value);
     $("#plan-price").innerHTML = `${money(p.monthlyCents)}<small>/mo + ${money(p.setupCents)} setup</small>`;
     $("#plan-delivery").textContent = p.delivery;
-    $("#plan-features").innerHTML = p.features.map((f) => `<li>${withValue(f, p)}</li>`).join("");
+    // Every feature from every plan; what this plan doesn't include is crossed out.
+    $("#plan-features").innerHTML = compare
+      .filter((row) => row[p.id] !== null)
+      .map((row) => {
+        const v = row[p.id];
+        return v === false
+          ? `<li class="no"><span class="sr-only">Not included: </span>${esc(row.label)}</li>`
+          : `<li class="yes">${withValue(typeof v === "string" ? v : row.label, p)}</li>`;
+      })
+      .join("");
+    // Colors and fonts are Starter-and-up: locked on Launch (and left out of the order).
+    const launch = p.id === "launch";
+    for (const name of ["colors", "font"]) {
+      const field = $(`#project [name=${name}]`);
+      field.disabled = launch;
+      field.closest("label").classList.toggle("locked", launch);
+    }
     $("#due-today").textContent = money(p.setupCents);
     $("#monthly-start").textContent = `${money(p.monthlyCents)}/mo starts in ${p.trialDays} days, around when your site goes live.`;
     $("#feature-set").hidden = p.id !== "business";

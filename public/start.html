@@ -17,7 +17,13 @@
     @media (max-width: 900px) { .summary { position: static; order: -1; } }
     .summary .price { font-size: 1.8rem; font-weight: 800; color: var(--ink); }
     .summary .price small { font-size: .95rem; color: var(--muted); font-weight: 600; }
-    .summary ul { padding-left: 18px; margin: 12px 0 0; color: var(--muted); font-size: .92rem; }
+    .summary ul { list-style: none; padding-left: 0; margin: 12px 0 0; color: var(--muted); font-size: .92rem; }
+    .summary li { position: relative; padding-left: 24px; margin-bottom: 6px; }
+    .summary li.yes::before { content: "✓"; position: absolute; left: 2px; color: var(--ok); font-weight: 800; }
+    .summary li.no { text-decoration: line-through; opacity: .5; }
+    .summary li.no::before { content: "✕"; position: absolute; left: 2px; text-decoration: none; display: inline-block; }
+    label.locked { opacity: .55; }
+    label.locked input, label.locked select { cursor: not-allowed; background: var(--bg-soft); }
     .summary select { margin-bottom: 4px; }
     fieldset { border: 0; padding: 0; margin: 0 0 26px; }
     legend { font-weight: 800; font-size: 1.15rem; color: var(--ink); margin-bottom: 12px; }
@@ -105,8 +111,8 @@
             </div>
           </div>
           <div class="row">
-            <label>Colors you like <span class="hint">(Starter and up)</span><input name="colors" placeholder="Navy and orange, match my logo…"></label>
-            <label>Font style <span class="hint">(Starter and up)</span>
+            <label>Colors you like <span class="hint">(Starter and up; switch plans to choose)</span><input name="colors" placeholder="Navy and orange, match my logo…"></label>
+            <label>Font style <span class="hint">(Starter and up; switch plans to choose)</span>
               <select name="font">
                 <option value="modern">Modern</option>
                 <option value="classic">Classic</option>

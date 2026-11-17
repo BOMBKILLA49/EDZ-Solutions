@@ -710,6 +710,7 @@ app.get("/api/plans", (req, res) => {
   res.json({
     plans: plans.PLANS.map((p) => ({ ...p, cardsValueCents: Math.round(p.cards * cheapestCard * 100) })),
     powerFeatures: plans.POWER_FEATURES,
+    compare: plans.COMPARE,
   });
 });
 
