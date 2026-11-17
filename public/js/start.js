@@ -71,6 +71,51 @@
     reader.readAsDataURL(file);
   });
 
+  // ---------- AI logo maker ----------
+  $("#ai-logo-open").addEventListener("click", () => {
+    $("#ai-logo-panel").hidden = false;
+    $("#ai-logo-open").hidden = true;
+  });
+  $("#ai-logo-make").addEventListener("click", async () => {
+    const form = Object.fromEntries(new FormData($("#project")));
+    const btn = $("#ai-logo-make");
+    const msg = $("#ai-logo-msg");
+    msg.className = "msg";
+    if (!form.business) return showMsg(msg, "Add your business name first, so it can go on the logo.", false);
+    btn.disabled = true;
+    btn.textContent = "Making 3 logos… (about 20–40 seconds)";
+    try {
+      const { jobId } = await postJSON("/api/logo-ai", { business: form.business, industry: form.industry, style: $("#ai-logo-style").value });
+      let images = null;
+      for (let i = 0; i < 60 && !images; i++) {
+        await new Promise((r) => setTimeout(r, 2500));
+        const res = await fetch(`/api/logo-ai/${jobId}`);
+        const out = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(out.error || "The logo maker hit a snag. Please try again.");
+        if (out.status === "done") images = out.images;
+      }
+      if (!images?.length) throw new Error("The logo maker took too long. Please try again.");
+      $("#ai-logo-grid").innerHTML = images.map((src, i) => `<button type="button" data-i="${i}"><img src="${src}" alt="Logo option ${i + 1}">Use this one</button>`).join("");
+      $("#ai-logo-grid").dataset.images = JSON.stringify(images);
+      showMsg(msg, "Pick the one you like. Check the spelling: AI can get letters wrong. Not quite right? Describe changes above and make 3 more.", true);
+    } catch (err) {
+      showMsg(msg, err.message, false);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Make 3 more";
+    }
+  });
+  $("#ai-logo-grid").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-i]");
+    if (!b) return;
+    const images = JSON.parse($("#ai-logo-grid").dataset.images || "[]");
+    logo = { name: "ai-logo.png", dataUrl: images[Number(b.dataset.i)] };
+    $("#logo").value = "";
+    document.querySelectorAll("#ai-logo-grid button").forEach((x) => x.classList.toggle("on", x === b));
+    showMsg($("#ai-logo-msg"), "Logo added to your website preview. It comes with your files, ready for your metal business cards too.", true);
+    schedulePreview();
+  });
+
   // ---------- live website preview ----------
   // Their homepage, rendered by the server from the form (plus the sample we made for them, if
   // they came from one) and shown scaled down. Refreshes shortly after they stop typing.
@@ -111,7 +156,7 @@
         : "";
       $("#sp-note").textContent = out.pages.length > 1
         ? `Your plan includes ${out.pages.length} pages like these${extra ? " (up to 25)" : ""}. Tap a page to see it. Updates as you fill in the form.`
-        : "The Launch plan is one page with everything on it. Updates as you fill in the form.";
+        : `The Launch plan is one page with everything on it, in our standard colors and font.${$("#project [name=colors]").value.trim() || $("#project [name=font]").value !== "modern" ? " Your own colors and font come with Starter and up." : ""} Updates as you fill in the form.`;
       iframe.srcdoc = out.html;
       fitPreview();
       // A new trade's photo is being made; show it once it's ready.

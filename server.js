@@ -731,6 +731,7 @@ app.post("/api/plan-checkout", async (req, res) => {
     domain: clean(b.domain, 120),
     domainStatus: ["have", "need"].includes(b.domainStatus) ? b.domainStatus : "have",
     colors: clean(b.colors, 300),
+    font: ["modern", "classic", "bold", "friendly"].includes(b.font) ? b.font : null,
     likes: clean(b.likes, 1000),
     feature: plan.id === "business" ? clean(b.feature, 40) : null,
     notes: clean(b.notes, 3000),
@@ -833,6 +834,7 @@ async function sendProjectAlert(p) {
       ? `Domain: NEEDS ONE (free to them) — find the best available name and register it in our Spaceship account${d.domain ? `. Their ideas: ${d.domain}` : ""}`
       : `Domain: ${d.domain || "(not given)"} — they own it; we'll need its DNS pointed at the site`,
     d.colors ? `Colors: ${d.colors}` : null,
+    d.font && d.font !== "modern" ? `Font style: ${d.font}` : null,
     d.likes ? `Sites they like: ${d.likes}` : null,
     ``,
     `On the site — phone: ${d.phone || "-"} · email: ${d.email || "-"} · address: ${d.address || "-"}`,
@@ -1529,6 +1531,52 @@ app.get("/p/:slug/shot.jpg", async (req, res) => {
   res.set({ "Content-Type": "image/jpeg", "Cache-Control": "public, max-age=86400" }).send(rows[0].shot);
 });
 
+// ---------- AI logo maker (start form, for businesses without a logo) ----------
+// Three logos in different directions, made in parallel; the page polls for them because the
+// image model can take longer than Heroku's 30 s request limit. Results live in memory briefly.
+const logoJobs = new Map();
+const LOGO_DIRECTIONS = [
+  "A simple icon that fits the trade, placed to the left of the business name",
+  "A round badge or emblem with the business name inside it",
+  "A bold wordmark: just the business name in distinctive, well-crafted lettering with one small accent shape",
+];
+app.post("/api/logo-ai", async (req, res) => {
+  if (!openai) return res.status(503).json({ error: "The logo maker isn't switched on yet." });
+  const business = clean(req.body.business, 60);
+  if (!business) return res.status(400).json({ error: "Add your business name first." });
+  if (rateLimited(`logo:${req.ip}`, 6)) return res.status(429).json({ error: "That's a lot of logos for one hour. Try again a little later." });
+  const industry = clean(req.body.industry, 60);
+  const style = clean(req.body.style, 300);
+  for (const [k, j] of logoJobs) if (Date.now() - j.createdAt > 15 * 60 * 1000) logoJobs.delete(k);
+  const id = crypto.randomUUID();
+  const job = { createdAt: Date.now(), status: "working" };
+  logoJobs.set(id, job);
+  Promise.all(LOGO_DIRECTIONS.map(async (direction) => {
+    const result = await openai.images.generate({
+      model: IMAGE_MODEL,
+      size: "1024x1024",
+      quality: "medium",
+      output_format: "png",
+      background: "transparent",
+      prompt: `Design a professional logo for "${business}"${industry ? `, a ${industry.toLowerCase()} business` : ""}. ${direction}.${style ? ` The owner's style request: ${style}.` : ""} Spell the name exactly "${business}". Flat, clean vector look with one to three solid colors, crisp edges, easy to read at small sizes. Centered on a plain transparent background with some empty space around it. No mockup, no photo, no 3D, no drop shadows, and no other words, slogans or taglines.`,
+    });
+    const b64 = result.data?.[0]?.b64_json;
+    return b64 ? `data:image/png;base64,${b64}` : null;
+  }))
+    .then((images) => Object.assign(job, { status: "done", images: images.filter(Boolean) }))
+    .catch((err) => {
+      console.error("logo maker error:", err.status, err.code, err.message);
+      Object.assign(job, { status: "error", error: err.code === "moderation_blocked" ? "That request can't be made. Try different words." : "The logo maker hit a snag. Please try again." });
+    });
+  res.status(202).json({ jobId: id });
+});
+app.get("/api/logo-ai/:id", (req, res) => {
+  const job = logoJobs.get(req.params.id);
+  if (!job) return res.status(404).json({ error: "Those logos expired. Make new ones." });
+  if (job.status === "error") return res.status(500).json({ error: job.error });
+  res.json({ status: job.status, images: job.status === "done" ? job.images : undefined });
+});
+
 // Common color words from the /start form's "Colors you like" → the site's main color.
 const COLOR_WORDS = { navy: "#1e3a8a", blue: "#1d4ed8", "sky blue": "#0284c7", teal: "#0f766e", green: "#15803d", "forest green": "#166534", lime: "#65a30d", red: "#b91c1c", maroon: "#7f1d1d", burgundy: "#7f1d1d", orange: "#ea580c", yellow: "#ca8a04", gold: "#b8860b", purple: "#6d28d9", pink: "#db2777", brown: "#78350f", tan: "#a16207", black: "#111827", gray: "#4b5563", grey: "#4b5563", silver: "#64748b" };
 function colorFromWords(text) {
@@ -1561,6 +1609,7 @@ app.post("/api/preview-draft", async (req, res) => {
   if (b.services) d.services = lines(b.services).map((name) => ({ name }));
   const color = colorFromWords(b.colors);
   if (color) d.color = color;
+  if (["modern", "classic", "bold", "friendly"].includes(b.font)) d.font = b.font;
   if (b.logo && String(b.logo).length < 7_000_000) d.logoData = String(b.logo);
   // City for the headline: from the sample, or the first town in "Area you serve".
   if (!d.city && d.area) d.city = clean(d.area.split(/,|\band\b/)[0], 60);

@@ -21,6 +21,12 @@
     .summary select { margin-bottom: 4px; }
     fieldset { border: 0; padding: 0; margin: 0 0 26px; }
     legend { font-weight: 800; font-size: 1.15rem; color: var(--ink); margin-bottom: 12px; }
+    .ai-logo { background: var(--bg-soft); border-radius: 12px; padding: 14px 16px; margin: -4px 0 18px; }
+    .ai-logo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 14px; }
+    .ai-logo-grid:empty { display: none; }
+    .ai-logo-grid button { padding: 10px; border: 2px solid var(--line); border-radius: 12px; background: #fff; cursor: pointer; display: grid; gap: 6px; font: inherit; font-size: .85rem; font-weight: 700; color: var(--text); }
+    .ai-logo-grid button img { width: 100%; aspect-ratio: 1; object-fit: contain; }
+    .ai-logo-grid button.on { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(245,158,11,.25); }
     .site-preview { margin-bottom: 22px; padding-bottom: 20px; border-bottom: 1px solid var(--line); }
     .sp-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
     .sp-pages { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
@@ -89,7 +95,26 @@
           <label>Logo <span class="hint">(optional; PNG, JPG, SVG or PDF, up to 5 MB)</span>
             <input type="file" id="logo" accept=".png,.jpg,.jpeg,.svg,.pdf">
           </label>
-          <label>Colors you like <span class="hint">(optional)</span><input name="colors" placeholder="Navy and orange, match my logo…"></label>
+          <div class="ai-logo" id="ai-logo">
+            <p style="margin:0"><strong>No logo?</strong> Create one with AI, free with every plan. <button type="button" class="link-btn" id="ai-logo-open">Make me a logo</button></p>
+            <div id="ai-logo-panel" hidden>
+              <label style="margin-top:12px">Describe the look you want <span class="hint">(optional)</span><input id="ai-logo-style" placeholder="Rugged and bold, a wrench, navy and orange…"></label>
+              <button type="button" class="btn btn-dark" id="ai-logo-make">Make 3 logos</button>
+              <div class="ai-logo-grid" id="ai-logo-grid"></div>
+              <div class="msg" id="ai-logo-msg" role="status"></div>
+            </div>
+          </div>
+          <div class="row">
+            <label>Colors you like <span class="hint">(Starter and up)</span><input name="colors" placeholder="Navy and orange, match my logo…"></label>
+            <label>Font style <span class="hint">(Starter and up)</span>
+              <select name="font">
+                <option value="modern">Modern</option>
+                <option value="classic">Classic</option>
+                <option value="bold">Bold</option>
+                <option value="friendly">Friendly</option>
+              </select>
+            </label>
+          </div>
           <label>Websites you like <span class="hint">(optional; links and what you like about them)</span><textarea name="likes" style="min-height:80px"></textarea></label>
           <label>Anything else? <span class="hint">(optional)</span><textarea name="notes" style="min-height:80px"></textarea></label>
         </fieldset>
@@ -112,7 +137,7 @@
         <div class="site-preview">
           <div class="sp-head"><strong>Your website preview</strong><button type="button" class="link-btn" id="sp-open">Open full size</button></div>
           <div class="sp-pages" id="sp-pages" role="tablist" aria-label="Pages in your plan"></div>
-          <div class="sp-frame" id="sp-frame"><iframe id="sp-iframe" title="Your website preview" tabindex="-1" sandbox="allow-same-origin"></iframe></div>
+          <div class="sp-frame" id="sp-frame"><iframe id="sp-iframe" title="Your website preview" tabindex="-1"></iframe></div>
           <p class="hint" id="sp-note" style="margin:8px 0 0">Updates as you fill in the form. This is your homepage; your plan's other pages are built from it.</p>
         </div>
         <label>Your plan<select id="plan"></select></label>
