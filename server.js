@@ -714,7 +714,6 @@ app.get("/api/plans", (req, res) => {
   const cheapestCard = Math.min(...catalog.cardThickness.map((t) => t.perCard)) + Math.min(...catalog.cardFinish.map((f) => f.upcharge));
   res.json({
     plans: plans.PLANS.map((p) => ({ ...p, cardsValueCents: Math.round(p.cards * cheapestCard * 100) })),
-    powerFeatures: plans.POWER_FEATURES,
     compare: plans.COMPARE,
     businessTypes: businessTypes.TYPES,
   });
@@ -740,7 +739,6 @@ app.post("/api/plan-checkout", async (req, res) => {
     colors: clean(b.colors, 300),
     font: ["modern", "classic", "bold", "friendly"].includes(b.font) ? b.font : null,
     likes: clean(b.likes, 1000),
-    feature: plan.id === "business" ? clean(b.feature, 40) : null,
     notes: clean(b.notes, 3000),
     contactName: clean(b.contactName, 120),
     contactEmail: clean(b.contactEmail, 120),
@@ -764,7 +762,6 @@ app.post("/api/plan-checkout", async (req, res) => {
     return res.status(400).json({ error: `The ${plan.name} plan includes up to ${plan.photos} photos and you added ${data.photos.length}. Remove ${data.photos.length - plan.photos}${more ? `, or switch to ${more.name} for up to ${more.photos}` : ""}.` });
   }
   if (!data.contactName || !/^\S+@\S+\.\S+$/.test(data.contactEmail)) return res.status(400).json({ error: "Add your name and a valid email so we can reach you." });
-  if (plan.id === "business" && !plans.POWER_FEATURES.some((f) => f.id === data.feature)) return res.status(400).json({ error: "Pick your power feature." });
 
   let logo = null;
   if (b.logo?.dataUrl) {
@@ -803,8 +800,11 @@ app.post("/api/plan-checkout", async (req, res) => {
         metadata: { project_id: id, plan: plan.id },
       },
       customer_email: data.contactEmail,
+      // Their free metal business cards are shipped here.
+      shipping_address_collection: { allowed_countries: ["US"] },
       metadata: { kind: "website", project_id: id, plan: plan.id },
       custom_text: {
+        shipping_address: { message: `Where should we ship your ${plan.cards} free metal business cards?` },
         submit: { message: `You pay the ${(plan.setupCents / 100).toFixed(0)} dollar setup today. The monthly plan starts in ${plan.trialDays} days, around when your site goes live. Cancel anytime.` },
       },
       success_url: `${SITE_URL}/project-started?session_id={CHECKOUT_SESSION_ID}`,
@@ -828,10 +828,14 @@ async function markProjectPaid(sessionId) {
   const session = await stripe.checkout.sessions.retrieve(sessionId);
   if (!["paid", "no_payment_required"].includes(session.payment_status)) return null;
   const cust = session.customer_details || {};
+  // Where their free metal business cards go (collected by Stripe Checkout).
+  const ship = session.collected_information?.shipping_details || session.shipping_details || null;
+  const shipTo = ship?.address ? { name: ship.name || cust.name || "", ...ship.address } : null;
   const { rows } = await pool.query(
-    `UPDATE projects SET status='new', paid_at=now(), stripe_subscription=$2, stripe_customer=$3, customer_email=$4, customer_name=$5
+    `UPDATE projects SET status='new', paid_at=now(), stripe_subscription=$2, stripe_customer=$3, customer_email=$4, customer_name=$5,
+       data = CASE WHEN $6::jsonb IS NULL THEN data ELSE data || jsonb_build_object('shipTo', $6::jsonb) END
      WHERE stripe_session=$1 AND status='pending_payment' RETURNING *`,
-    [sessionId, session.subscription || null, session.customer || null, cust.email || null, cust.name || null]
+    [sessionId, session.subscription || null, session.customer || null, cust.email || null, cust.name || null, shipTo ? JSON.stringify(shipTo) : null]
   );
   if (rows[0]?.data?.previewSlug) {
     await pool.query("UPDATE prospects SET status='won' WHERE slug=$1", [rows[0].data.previewSlug]).catch((e) => console.error("prospect won update failed:", e));
@@ -843,11 +847,10 @@ async function markProjectPaid(sessionId) {
 async function sendProjectAlert(p) {
   const plan = plans.planById(p.plan);
   const d = p.data || {};
-  const feature = plans.POWER_FEATURES.find((f) => f.id === d.feature);
   const lines = [
     `NEW WEBSITE PROJECT — ${plan.name} ($${(plan.setupCents / 100).toFixed(2)} setup paid, $${(plan.monthlyCents / 100).toFixed(2)}/mo starts in ${plan.trialDays} days)`,
     `Deliver by: ${plan.delivery.replace(/^Live in /, "")}`,
-    plan.cards ? `Includes: ${plan.cards} free metal business cards` : null,
+    plan.cards ? `Includes: ${plan.cards} free metal business cards, shipped to: ${d.shipTo ? [d.shipTo.name, d.shipTo.line1, d.shipTo.line2, `${d.shipTo.city}, ${d.shipTo.state} ${d.shipTo.postal_code}`].filter(Boolean).join(", ") : "(no address given; ask them)"}` : null,
     ``,
     `Business: ${d.business}${d.industry ? ` (${d.industry})` : ""}`,
     d.description ? `About: ${d.description}` : null,
@@ -861,7 +864,6 @@ async function sendProjectAlert(p) {
     d.photos?.length ? `Photos (${d.photos.length}):\n${d.photos.map((x, i) => `  ${i + 1}. ${SITE_URL}/simg/${x.id}.jpg${x.label ? ` — ${x.label}` : ""}`).join("\n")}` : null,
     d.googleUrl ? `Google listing (reviews): ${d.googleUrl}` : null,
     d.area ? `Service area: ${d.area}` : null,
-    feature ? `Power feature: ${feature.label}` : null,
     d.domainStatus === "need"
       ? `Domain: NEEDS ONE (free to them) — find the best available name and register it in our Spaceship account${d.domain ? `. Their ideas: ${d.domain}` : ""}`
       : `Domain: ${d.domain || "(not given)"} — they own it; we'll need its DNS pointed at the site`,
@@ -1217,7 +1219,7 @@ app.get("/api/admin/projects", requireAdmin, async (req, res) => {
     `SELECT id, created_at, paid_at, status, plan, stripe_subscription, data, logo_name, customer_email, customer_name
      FROM projects WHERE status <> 'pending_payment' ORDER BY paid_at DESC LIMIT 2000`
   );
-  res.json({ projects: rows.map((p) => ({ ...p, planName: plans.planById(p.plan)?.name || p.plan })), powerFeatures: plans.POWER_FEATURES });
+  res.json({ projects: rows.map((p) => ({ ...p, planName: plans.planById(p.plan)?.name || p.plan })) });
 });
 
 app.get("/api/admin/projects/:id/logo", requireAdmin, async (req, res) => {
@@ -1864,12 +1866,11 @@ app.post("/api/preview-draft", async (req, res) => {
     else if (d.industry) tradeImages.ensureTradeImage(pool, openai, IMAGE_MODEL, d.industry);
   }
   // The plan they picked decides which pages exist; the preview shows one at a time.
-  const plan = plans.planById(b.plan) ? b.plan : "launch";
-  const feature = plans.POWER_FEATURES.some((f) => f.id === b.feature) ? b.feature : "";
-  const pages = planPages(plan, plan === "business" ? feature : "");
+  const plan = plans.planById(b.plan)?.id || "launch";
+  const pages = planPages(plan);
   const page = pages.some((x) => x.id === b.page) ? b.page : "home";
   res.json({
-    html: renderPreview({ slug: "draft", data: d }, { draft: true, heroImage, google, claimUrl: "#", plan, page, feature: plan === "business" ? feature : "" }),
+    html: renderPreview({ slug: "draft", data: d }, { draft: true, heroImage, google, claimUrl: "#", plan, page }),
     pages: pages.map(({ id, label }) => ({ id, label })),
     page,
     tradePending: !heroImage && Boolean(tradeImages.tradeKey(d.industry)),

@@ -355,8 +355,7 @@
     const PSTATUS = { new: "New", in_progress: "In progress", launched: "Launched", canceled: "Canceled" };
     const PNEXT = { new: ["in_progress", "Start building"], in_progress: ["launched", "Mark launched"] };
     async function loadProjects() {
-      const { projects, powerFeatures } = await (await fetch("/api/admin/projects")).json();
-      const feat = Object.fromEntries(powerFeatures.map((f) => [f.id, f.label]));
+      const { projects } = await (await fetch("/api/admin/projects")).json();
       setCount("n-projects", projects.filter((p) => p.status === "new").length);
       renderPager("projects", projects.length, loadProjects);
       document.getElementById("projects").innerHTML = projects.length
@@ -379,7 +378,7 @@
                 ${(d.photos || []).length ? `<dt>Photos</dt><dd><div style="display:flex;gap:8px;flex-wrap:wrap">${d.photos.map((x) => `<a href="/simg/${esc(x.id)}.jpg" target="_blank" title="${esc(x.label || "")}" style="text-decoration:none;color:inherit;width:120px;font-size:.8rem"><img src="/simg/${esc(x.id)}.jpg" alt="" style="width:120px;height:90px;object-fit:cover;border-radius:8px;display:block">${esc(x.label || "")}</a>`).join("")}</div></dd>` : ""}
                 ${d.googleUrl ? `<dt>Google</dt><dd><a href="${esc(d.googleUrl)}" target="_blank" rel="noopener">Their Google listing (reviews)</a></dd>` : ""}
                 ${d.area ? `<dt>Area</dt><dd>${esc(d.area)}</dd>` : ""}
-                ${d.feature ? `<dt>Power feature</dt><dd>${esc(feat[d.feature] || d.feature)}</dd>` : ""}
+                ${d.shipTo ? `<dt>Ship cards to</dt><dd>${esc([d.shipTo.name, d.shipTo.line1, d.shipTo.line2, `${d.shipTo.city}, ${d.shipTo.state} ${d.shipTo.postal_code}`].filter(Boolean).join("\n"))}</dd>` : ""}
                 <dt>Domain</dt><dd>${d.domainStatus === "need" ? `<strong>Needs one, free: pick &amp; register it</strong>${d.domain ? ` (their ideas: ${esc(d.domain)})` : ""}` : esc(d.domain || "—")}</dd>
                 <dt>On the site</dt><dd>${esc([d.phone, d.email, d.address].filter(Boolean).join(" · ") || "—")}${d.hours ? `\n${esc(d.hours)}` : ""}</dd>
                 ${d.colors ? `<dt>Colors</dt><dd>${esc(d.colors)}</dd>` : ""}

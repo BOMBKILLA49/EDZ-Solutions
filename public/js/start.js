@@ -1,6 +1,6 @@
 (async function () {
   const $ = (s) => document.querySelector(s);
-  const { plans, powerFeatures, compare, businessTypes } = await (await fetch("/api/plans")).json();
+  const { plans, compare, businessTypes } = await (await fetch("/api/plans")).json();
   const money = (c) => `$${(c / 100).toLocaleString("en-US", { maximumFractionDigits: c % 100 ? 2 : 0 })}`;
   const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
   // "50 free metal business cards" → "... ($150 value)".
@@ -44,8 +44,9 @@
       });
   }
   $("#plan").innerHTML = plans.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join("");
-  $("#plan").value = plans.some((p) => p.id === wanted) ? wanted : "business";
-  $("#feature").innerHTML = powerFeatures.map((f) => `<option value="${f.id}">${esc(f.label)}</option>`).join("");
+  // Old links (?plan=starter, business, solution) go to Website + Growth.
+  const OLD = { starter: "growth", business: "growth", solution: "growth" };
+  $("#plan").value = plans.some((p) => p.id === (OLD[wanted] || wanted)) ? OLD[wanted] || wanted : "growth";
 
   function showPlan() {
     const p = plans.find((x) => x.id === $("#plan").value);
@@ -61,16 +62,8 @@
           : `<li class="yes">${withValue(typeof v === "string" ? v : row.label, p)}</li>`;
       })
       .join("");
-    // Colors and fonts are Starter-and-up: locked on Launch (and left out of the order).
-    const launch = p.id === "launch";
-    for (const name of ["colors", "font"]) {
-      const field = $(`#project [name=${name}]`);
-      field.disabled = launch;
-      field.closest("label").classList.toggle("locked", launch);
-    }
     $("#due-today").textContent = money(p.setupCents);
     $("#monthly-start").textContent = `${money(p.monthlyCents)}/mo starts in ${p.trialDays} days, around when your site goes live.`;
-    $("#feature-set").hidden = p.id !== "business";
     history.replaceState(null, "", `?plan=${p.id}${previewSlug ? `&preview=${encodeURIComponent(previewSlug)}` : ""}`);
   }
   $("#plan").addEventListener("change", showPlan);
@@ -330,14 +323,13 @@
       if (mine !== seq) return;
       lastHtml = out.html;
       currentPage = out.page;
-      // One tab per page in their plan (Launch is a single page, so no tabs).
-      const extra = { solution: "and up to 25 pages" }[$("#plan").value];
+      // One tab per page in their plan (Website is a single page, so no tabs).
       $("#sp-pages").innerHTML = out.pages.length > 1
-        ? out.pages.map((pg) => `<button type="button" role="tab" data-page="${pg.id}" class="${pg.id === currentPage ? "on" : ""}">${esc(pg.label)}</button>`).join("") + (extra ? `<span class="count">${extra}</span>` : "")
+        ? out.pages.map((pg) => `<button type="button" role="tab" data-page="${pg.id}" class="${pg.id === currentPage ? "on" : ""}">${esc(pg.label)}</button>`).join("")
         : "";
       $("#sp-note").textContent = out.pages.length > 1
-        ? `Your plan includes ${out.pages.length} pages like these${extra ? " (up to 25)" : ""}. Tap a page to see it. Updates as you fill in the form.`
-        : `The Launch plan is one page with everything on it, in our standard colors and font.${$("#project [name=colors]").value.trim() || $("#project [name=font]").value !== "modern" ? " Your own colors and font come with Starter and up." : ""} Updates as you fill in the form.`;
+        ? `Website + Growth includes up to 8 pages like these. Tap a page to see it. Updates as you fill in the form.`
+        : `The Website plan is one page with everything on it. Updates as you fill in the form.`;
       iframe.srcdoc = out.html;
       fitPreview();
       // A new trade's photo is being made; show it once it's ready.
