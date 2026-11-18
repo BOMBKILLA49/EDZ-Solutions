@@ -1341,14 +1341,17 @@ app.get("/api/admin/prospects", requireAdmin, async (req, res) => {
   const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 500));
   const offset = Math.max(0, Number(req.query.offset) || 0);
   // No status = everything still in play (finished ones have their own filters).
-  const where = status ? "WHERE status=$1" : "WHERE status NOT IN ('skipped', 'bounced', 'unsubscribed')";
+  // ?view=outreach (the Outreach tab) is email businesses only, plus Skipped and Won from the call
+  // list (removed cards are undone or deleted there); call-list work happens on the Call list tab.
+  const only = req.query.view === "outreach" ? "(channel='email' OR status IN ('skipped', 'won'))" : "TRUE";
+  const where = `${status ? "WHERE status=$1" : "WHERE status NOT IN ('skipped', 'bounced', 'unsubscribed')"} AND ${only}`;
   const { rows } = await pool.query(
     `SELECT id, created_at, slug, email, domain, status, prev_status, followup_at, channel, data, sent_at, sent_from, views, last_view_at, notes, shot IS NOT NULL AS has_shot
      FROM prospects ${where} ORDER BY COALESCE(sent_at, created_at) DESC LIMIT ${limit} OFFSET ${offset}`,
     status ? [status] : []
   );
   const total = (await pool.query(`SELECT count(*)::int AS n FROM prospects ${where}`, status ? [status] : [])).rows[0].n;
-  const counts = await pool.query("SELECT status, count(*)::int AS n FROM prospects GROUP BY status");
+  const counts = await pool.query(`SELECT status, count(*)::int AS n FROM prospects WHERE ${only} GROUP BY status`);
   const sent24 = await pool.query("SELECT count(*)::int AS n FROM prospects WHERE sent_at > now() - interval '24 hours'");
   res.json({
     prospects: rows,

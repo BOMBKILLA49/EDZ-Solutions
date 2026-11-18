@@ -404,7 +404,7 @@
     let ofilter = "";
     async function loadOutreach() {
       const st = pageState("outreach");
-      const out = await (await fetch(`/api/admin/prospects?limit=${st.size}&offset=${st.page * st.size}${ofilter ? `&status=${ofilter}` : ""}`)).json();
+      const out = await (await fetch(`/api/admin/prospects?view=outreach&limit=${st.size}&offset=${st.page * st.size}${ofilter ? `&status=${ofilter}` : ""}`)).json();
       setCount("n-outreach", out.counts.sent || 0);
       renderPager("outreach", out.total, loadOutreach);
       document.getElementById("outreach-stats").innerHTML =
