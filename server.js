@@ -1423,6 +1423,35 @@ app.post("/api/admin/prospects/:id/email", requireAdmin, async (req, res) => {
   }
 });
 
+// Edit info (call-list business): fill in what the lead search missed (address, services, logo...).
+// Cleaned the same way as a new lead. The sample page reads it live; the screenshot is cleared so
+// the next daily run retakes it for the text/Messenger link preview.
+app.post("/api/admin/prospects/:id/info", requireAdmin, async (req, res) => {
+  const { rows } = await pool.query("SELECT data, domain, channel FROM prospects WHERE id=$1", [req.params.id]);
+  if (!rows[0]) return res.status(404).json({ error: "No such business." });
+  if (rows[0].channel !== "call") return res.status(400).json({ error: "Only call-list businesses can be edited here." });
+  const old = rows[0].data || {};
+  const fields = ["business", "contactName", "industry", "city", "state", "area", "phone", "email", "address", "hours", "tagline", "about", "services", "facebookUrl", "yelpUrl", "googleMapsUrl", "logoUrl", "photoUrls"];
+  const input = Object.fromEntries(fields.filter((k) => k in req.body).map((k) => [k, req.body[k]]));
+  const p = prospectFromLead({ ...old, ...input });
+  if (p.error) return res.status(400).json({ error: `Couldn't save: ${p.error}.` });
+  for (const [k, v, label] of [["facebookUrl", input.facebookUrl, "Facebook"], ["yelpUrl", input.yelpUrl, "Yelp"], ["googleMapsUrl", input.googleMapsUrl, "Google listing"], ["logoUrl", input.logoUrl, "logo"]]) {
+    if (v && !p.data[k]) return res.status(400).json({ error: `That ${label} link doesn't look right.` });
+  }
+  // The email here is shown on their site; "Found their email" is what moves them to the email queue.
+  const data = { ...old, ...p.data, noWebsite: old.noWebsite ?? p.data.noWebsite, emailSource: old.emailSource || p.data.emailSource, source: old.source || p.data.source };
+  try {
+    await pool.query(
+      "UPDATE prospects SET data=$2, phone_key=COALESCE($3, phone_key), shot=NULL WHERE id=$1",
+      [req.params.id, data, rows[0].domain ? null : p.phoneKey]
+    );
+  } catch (err) {
+    if (err.code === "23505") return res.status(400).json({ error: "Another business on the list already has that phone number or Facebook page." });
+    throw err;
+  }
+  res.json({ ok: true });
+});
+
 // Deletes finished prospects (skipped, bounced, unsubscribed) and keeps only their
 // email/website/phone on the do-not-contact list. Body: { ids: [...] } or { status: "skipped" } for all.
 app.post("/api/admin/prospects/delete", requireAdmin, async (req, res) => {
