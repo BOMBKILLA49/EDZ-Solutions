@@ -79,6 +79,10 @@
     @media (max-width: 760px) { .add-biz .row3, .add-biz .row2 { grid-template-columns: 1fr; } }
     .call-card .edit-info { border-top: 1px solid var(--line); padding-top: 14px; }
     .call-card .edit-info .btns { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .call-card .edit-info .up-btn { display: inline-block; margin: -6px 0 12px; font-size: .85rem; font-weight: 700; padding: 7px 12px; border-radius: 9px; border: 1px solid var(--line); background: #fff; color: var(--ink); cursor: pointer; }
+    .call-card .edit-info .thumbs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+    .call-card .edit-info .thumbs img { height: 64px; max-width: 120px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); background: var(--bg-soft); }
+    .call-card .edit-info .thumbs img.logo { object-fit: contain; padding: 4px; }
     .add-email { display: flex; gap: 6px; flex-basis: 100%; justify-content: flex-end; }
     .add-email input { width: 220px; margin: 0; padding: 6px 10px; }
     #outreach-list td { vertical-align: top; }
@@ -623,12 +627,52 @@
           <label>About <span class="hint">(facts from their page or the call)</span><textarea name="about" rows="4">${v(d.about)}</textarea></label>
         </div>
         <div class="row2">
-          <label>Logo image link <span class="hint">(https link to the image)</span><input name="logoUrl" value="${v(d.logoUrl)}"></label>
-          <label>Photo links <span class="hint">(one per line, up to 6)</span><textarea name="photoUrls" rows="2">${v((d.photoUrls || []).join("\n"))}</textarea></label>
+          <div>
+            <label>Logo <span class="hint">(upload it, or paste an image link)</span><input name="logoUrl" value="${v(d.logoUrl)}"></label>
+            <label class="up-btn">Upload logo<input type="file" accept="image/*" data-up="logo" hidden></label>
+          </div>
+          <div>
+            <label>Photos <span class="hint">(up to 6; upload them, or paste links one per line)</span><textarea name="photoUrls" rows="2">${v((d.photoUrls || []).join("\n"))}</textarea></label>
+            <label class="up-btn">Upload photos<input type="file" accept="image/*" multiple data-up="photo" hidden></label>
+          </div>
         </div>
+        <div class="thumbs" data-thumbs></div>
         <div class="btns"><button class="btn btn-primary" type="submit">Save &amp; update their site</button><button class="btn" type="button" data-cancelinfo>Cancel</button><span class="meta" data-infomsg></span></div>
       </form>`;
     }
+    // Previews of the logo and photos in the Edit info form (only https links, like the site).
+    function showThumbs(form) {
+      const ok = (u) => /^https:\/\/[^\s"'<>]+$/i.test(u);
+      const logo = form.elements.logoUrl.value.trim();
+      const photos = form.elements.photoUrls.value.split(/\r?\n/).map((l) => l.trim()).filter(ok);
+      form.querySelector("[data-thumbs]").innerHTML = (ok(logo) ? `<img class="logo" src="${esc(logo)}" alt="Logo">` : "") + photos.map((u) => `<img src="${esc(u)}" alt="Photo">`).join("");
+    }
+    document.getElementById("call-list").addEventListener("input", (e) => {
+      const form = e.target.closest("form[data-infofor]");
+      if (form && ["logoUrl", "photoUrls"].includes(e.target.name)) showThumbs(form);
+    });
+    // Upload: the image is stored on the site and its link goes in the field; Save puts it on their site.
+    document.getElementById("call-list").addEventListener("change", async (e) => {
+      const input = e.target.closest("input[data-up]");
+      if (!input) return;
+      const form = input.closest("form[data-infofor]");
+      const msg = form.querySelector("[data-infomsg]");
+      const logo = input.dataset.up === "logo";
+      const have = form.elements.photoUrls.value.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+      const files = [...input.files].slice(0, logo ? 1 : Math.max(0, 6 - have.length));
+      if (!logo && !files.length) { msg.style.color = "var(--err)"; msg.textContent = "They already have 6 photos. Remove a line to add another."; return; }
+      msg.style.color = ""; msg.textContent = `Uploading ${files.length > 1 ? `${files.length} photos` : logo ? "logo" : "photo"}…`;
+      for (const file of files) {
+        const res = await fetch(`/api/admin/prospects/${form.dataset.infofor}/upload?kind=${logo ? "logo" : "photo"}`, { method: "POST", headers: { "Content-Type": file.type || "image/jpeg" }, body: file });
+        const out = await res.json().catch(() => ({}));
+        if (!res.ok) { msg.style.color = "var(--err)"; msg.textContent = `${file.name}: ${out.error || "upload failed."}`; input.value = ""; showThumbs(form); return; }
+        if (logo) form.elements.logoUrl.value = out.url;
+        else form.elements.photoUrls.value = [...form.elements.photoUrls.value.split(/\r?\n/).map((l) => l.trim()).filter(Boolean), out.url].join("\n");
+      }
+      input.value = "";
+      showThumbs(form);
+      msg.textContent = "Uploaded. Click Save to put it on their site.";
+    });
     document.getElementById("call-list").addEventListener("submit", async (e) => {
       const form = e.target.closest("form[data-infofor]");
       if (!form) return;
@@ -708,7 +752,10 @@
       const edit = e.target.closest("button[data-editinfo]");
       if (edit) {
         const card = edit.closest(".call-card");
-        if (!card.querySelector("form[data-infofor]")) card.insertAdjacentHTML("beforeend", editForm(window._calls[edit.dataset.editinfo]));
+        if (!card.querySelector("form[data-infofor]")) {
+          card.insertAdjacentHTML("beforeend", editForm(window._calls[edit.dataset.editinfo]));
+          showThumbs(card.querySelector("form[data-infofor]"));
+        }
         card.querySelector("form[data-infofor] input").focus();
         return;
       }

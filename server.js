@@ -1452,6 +1452,35 @@ app.post("/api/admin/prospects/:id/info", requireAdmin, async (req, res) => {
   res.json({ ok: true });
 });
 
+// Upload a logo or photo for a business's sample site (Edit info). Returns its link, which the
+// form puts in the logo/photo field; Save stores it like any other image link.
+// Logos keep transparency (PNG, up to 800 px); photos are JPEG, up to 1600 px, turned upright.
+app.post("/api/admin/prospects/:id/upload", requireAdmin, express.raw({ type: "image/*", limit: "20mb" }), async (req, res) => {
+  const logo = req.query.kind === "logo";
+  if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: "No image received." });
+  let out;
+  try {
+    const img = sharp(req.body).rotate().resize({ width: logo ? 800 : 1600, height: logo ? 800 : 1600, fit: "inside", withoutEnlargement: true });
+    out = logo ? await img.png().toBuffer() : await img.flatten({ background: "#ffffff" }).jpeg({ quality: 82, mozjpeg: true }).toBuffer();
+  } catch {
+    return res.status(400).json({ error: "Couldn't read that image. Try a JPG or PNG." });
+  }
+  const id = crypto.randomUUID();
+  try {
+    await pool.query("INSERT INTO prospect_images (id, prospect_id, image, type) VALUES ($1,$2,$3,$4)", [id, req.params.id, out, logo ? "png" : "jpg"]);
+  } catch {
+    return res.status(404).json({ error: "No such business." });
+  }
+  res.json({ url: `${SITE_URL}/pimg/${id}.${logo ? "png" : "jpg"}` });
+});
+
+app.get("/pimg/:id.:ext", async (req, res) => {
+  if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) return res.status(404).end();
+  const { rows } = await pool.query("SELECT image, type FROM prospect_images WHERE id=$1", [req.params.id]).catch(() => ({ rows: [] }));
+  if (!rows[0]) return res.status(404).end();
+  res.set({ "Content-Type": rows[0].type === "png" ? "image/png" : "image/jpeg", "Cache-Control": "public, max-age=604800" }).send(rows[0].image);
+});
+
 // Deletes finished prospects (skipped, bounced, unsubscribed) and keeps only their
 // email/website/phone on the do-not-contact list. Body: { ids: [...] } or { status: "skipped" } for all.
 app.post("/api/admin/prospects/delete", requireAdmin, async (req, res) => {
