@@ -1,6 +1,6 @@
 (async function () {
   const $ = (s) => document.querySelector(s);
-  const { plans, powerFeatures, compare } = await (await fetch("/api/plans")).json();
+  const { plans, powerFeatures, compare, businessTypes } = await (await fetch("/api/plans")).json();
   const money = (c) => `$${(c / 100).toLocaleString("en-US", { maximumFractionDigits: c % 100 ? 2 : 0 })}`;
   const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
   // "50 free metal business cards" → "... ($150 value)".
@@ -29,6 +29,8 @@
           $("#domain-status").value = "need";
           $("#domain-status").dispatchEvent(new Event("change"));
         }
+        if (!$("#project [name=type]").value && info.industry) pickType(guessType(info.industry) || "other");
+        if (info.googleUrl) loadGoogle();
         $("#preview-note").hidden = false;
         $("#preview-link").href = `/p/${encodeURIComponent(previewSlug)}?admin=1`;
       });
@@ -71,6 +73,159 @@
     $("#domain-label").textContent = need ? "Any names you like? (optional, we'll pick the best one available)" : "Your domain";
     $("#project [name=domain]").placeholder = need ? "Leave blank and we'll choose" : "yourbusiness.com";
     $("#domain-free").hidden = !need;
+  });
+
+  // ---------- kind of business: its own questions ----------
+  const typeOf = (id) => businessTypes.find((t) => t.id === id);
+  $("#type-pick").innerHTML = businessTypes.map((t) => `<button type="button" role="radio" aria-checked="false" data-type="${t.id}"><b>${esc(t.label)}</b><span>${esc(t.examples)}</span></button>`).join("");
+  function pickType(id) {
+    const t = typeOf(id);
+    if (!t) return;
+    $("#project [name=type]").value = id;
+    document.querySelectorAll("#type-pick button").forEach((b) => {
+      b.classList.toggle("on", b.dataset.type === id);
+      b.setAttribute("aria-checked", String(b.dataset.type === id));
+    });
+    const field = (o) => (o.type === "check"
+      ? `<label><input type="checkbox" data-x="${o.key}"> ${esc(o.label)}</label>`
+      : `<label>${esc(o.label)}<input data-x="${o.key}" ${o.type === "link" ? `type="url" placeholder="https://…"` : `placeholder="${esc(o.placeholder || "")}"`}></label>`);
+    const checks = t.options.filter((o) => o.type === "check");
+    const others = t.options.filter((o) => o.type !== "check");
+    $("#type-opts").innerHTML = `${checks.length ? `<div class="checks">${checks.map(field).join("")}</div>` : ""}${others.length ? `<div class="row">${others.map(field).join("")}</div>` : ""}`;
+    $("#services-label").textContent = t.servicesLabel;
+    $("#services-hint").textContent = `(${t.servicesHint})`;
+    $("#project [name=industry]").placeholder = t.examples;
+    $("#menu-box").hidden = !t.menu;
+    schedulePreview();
+  }
+  $("#type-pick").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-type]");
+    if (b) pickType(b.dataset.type);
+  });
+  // Typed their kind of business without picking a box: pick the likely one for them.
+  const GUESS = [
+    ["food", /restaurant|caf|coffee|espresso|bak|\bbar\b|pub|pizza|grill|food|diner|bistro|brew|taco|bbq|catering|donut|juice/i],
+    ["auto", /auto|tow|tire|mechanic|body shop|collision|detail|transmission|oil change/i],
+    ["beauty", /salon|barber|spa\b|nail|beauty|gym|fitness|massage|lash|tattoo|yoga/i],
+    ["retail", /shop|store|boutique|florist|gift|hardware|furniture|jewel|thrift/i],
+    ["trades", /plumb|electric|hvac|roof|landscap|lawn|clean|paint|construct|contract|handyman|pest|fence|concrete|floor|tree|pool|septic|weld|garage|locksmith|mov|remodel/i],
+  ];
+  const guessType = (text) => GUESS.find(([, re]) => re.test(text || ""))?.[0];
+  $("#project [name=industry]").addEventListener("change", (e) => {
+    if (!$("#project [name=type]").value) pickType(guessType(e.target.value) || "other");
+  });
+  const extrasNow = () => Object.fromEntries([...document.querySelectorAll("#type-opts [data-x]")].map((el) => [el.dataset.x, el.type === "checkbox" ? el.checked : el.value.trim()]));
+
+  // ---------- photos (each plan allows a number) with what each one shows ----------
+  let photos = [];
+  const planNow = () => plans.find((x) => x.id === $("#plan").value);
+  const biggerPlan = (n) => plans.find((x) => x.photos >= n && x.photos > planNow().photos);
+  function renderPhotos() {
+    const max = planNow().photos;
+    $("#photo-list").innerHTML = photos.map((ph, i) => `<div class="photo-row${i >= max ? " over" : ""}"><img src="${esc(ph.url)}" alt=""><input data-pi="${i}" value="${esc(ph.label)}" maxlength="80" placeholder="What is this? e.g. our storefront, a kitchen we remodeled"><button type="button" class="link-btn" data-premove="${i}">Remove</button></div>`).join("");
+    $("#photo-count").textContent = `${Math.min(photos.length, max)} of ${max} on ${planNow().name}`;
+    const over = photos.length - max;
+    if (over > 0) {
+      const up = biggerPlan(photos.length);
+      showMsg($("#photo-msg"), `${planNow().name} includes up to ${max} photos. Remove ${over}${up ? `, or switch to ${up.name} for up to ${up.photos}` : ""}. Faded photos won't be used.`, false);
+    } else $("#photo-msg").className = "msg";
+  }
+  async function uploadImage(file, kind) {
+    const res = await fetch(`/api/start-upload?kind=${kind}`, { method: "POST", headers: { "Content-Type": file.type || "image/jpeg" }, body: file });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(out.error || "Upload failed. Please try again.");
+    return out;
+  }
+  $("#photo-files").addEventListener("change", async (e) => {
+    const files = [...e.target.files];
+    e.target.value = "";
+    const room = planNow().photos - photos.length;
+    if (room <= 0) {
+      const up = biggerPlan(photos.length + files.length);
+      return showMsg($("#photo-msg"), `${planNow().name} includes up to ${planNow().photos} photos.${up ? ` Want to add more? ${up.name} includes up to ${up.photos}.` : ""}`, false);
+    }
+    const take = files.slice(0, room);
+    showMsg($("#photo-msg"), `Uploading ${take.length} photo${take.length > 1 ? "s" : ""}…`, true);
+    try {
+      for (const f of take) photos.push({ ...(await uploadImage(f, "photo")), label: "" });
+      renderPhotos();
+      if (files.length > take.length) {
+        const up = biggerPlan(photos.length + files.length - take.length);
+        showMsg($("#photo-msg"), `Added ${take.length}. ${planNow().name} includes up to ${planNow().photos} photos.${up ? ` Want to add more? ${up.name} includes up to ${up.photos}.` : ""}`, false);
+      } else showMsg($("#photo-msg"), `Added ${take.length}. Add a few words about each one.`, true);
+      schedulePreview();
+    } catch (err) {
+      renderPhotos();
+      showMsg($("#photo-msg"), err.message, false);
+    }
+  });
+  $("#photo-list").addEventListener("input", (e) => {
+    const i = e.target.dataset.pi;
+    if (i !== undefined) photos[Number(i)].label = e.target.value;
+  });
+  $("#photo-list").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-premove]");
+    if (!b) return;
+    photos.splice(Number(b.dataset.premove), 1);
+    renderPhotos();
+    schedulePreview();
+  });
+  $("#plan").addEventListener("change", renderPhotos);
+  renderPhotos();
+
+  // ---------- menu: photos of it, typed up by AI ----------
+  let menuIds = [];
+  $("#menu-files").addEventListener("change", async (e) => {
+    const files = [...e.target.files].slice(0, 6 - menuIds.length);
+    e.target.value = "";
+    if (!files.length) return showMsg($("#menu-msg"), "That's the most menu pages we can read at once.", false);
+    showMsg($("#menu-msg"), "Uploading your menu…", true);
+    try {
+      for (const f of files) {
+        const up = await uploadImage(f, "menu");
+        menuIds.push(up.id);
+        $("#menu-thumbs").insertAdjacentHTML("beforeend", `<img src="${esc(up.url)}" alt="Menu page">`);
+      }
+      showMsg($("#menu-msg"), "Reading your menu with AI… (about 10–30 seconds)", true);
+      const out = await postJSON("/api/start-menu", { ids: menuIds });
+      $("#project [name=menu]").value = out.text;
+      showMsg($("#menu-msg"), `Found ${out.items} items. Check them below and fix anything that's off. It's on your preview.`, true);
+      schedulePreview();
+    } catch (err) {
+      showMsg($("#menu-msg"), err.message, false);
+    }
+  });
+
+  // ---------- Google reviews from their Maps link ----------
+  let google = null;
+  let placeId = "";
+  async function loadGoogle() {
+    const url = $("#project [name=googleUrl]").value.trim();
+    google = null;
+    placeId = "";
+    if (!url) return ($("#google-msg").className = "msg"), schedulePreview();
+    const f = Object.fromEntries(new FormData($("#project")));
+    showMsg($("#google-msg"), "Looking up your Google listing…", true);
+    try {
+      const out = await postJSON("/api/start-google", { url, business: f.business, address: f.address, area: f.area });
+      google = out.google;
+      placeId = out.placeId;
+      showMsg($("#google-msg"), google.count ? `Found it: ${google.rating.toFixed(1)} ★ from ${google.count} reviews. Your rating and reviews are on your preview.` : "Found your listing. Your reviews show here once you have some.", true);
+    } catch (err) {
+      showMsg($("#google-msg"), err.message, false);
+    }
+    schedulePreview();
+  }
+  $("#project [name=googleUrl]").addEventListener("change", loadGoogle);
+
+  // Everything above, for the preview and the order.
+  const extraBody = () => ({
+    type: $("#project [name=type]").value,
+    extras: extrasNow(),
+    photos: photos.slice(0, planNow().photos).map(({ url, label }) => ({ url, label })),
+    menuImageIds: menuIds,
+    google,
+    placeId,
   });
 
   let logo = null;
@@ -161,7 +316,7 @@
     const mine = ++seq;
     frame.classList.add("loading");
     try {
-      const out = await postJSON("/api/preview-draft", { ...Object.fromEntries(new FormData($("#project"))), logo: logo?.dataUrl || "", previewSlug, plan: $("#plan").value, page: currentPage });
+      const out = await postJSON("/api/preview-draft", { ...Object.fromEntries(new FormData($("#project"))), ...extraBody(), logo: logo?.dataUrl || "", previewSlug, plan: $("#plan").value, page: currentPage });
       if (mine !== seq) return;
       lastHtml = out.html;
       currentPage = out.page;
@@ -206,7 +361,12 @@
     e.preventDefault();
     const form = e.target;
     const btn = $("#pay");
-    const body = { ...Object.fromEntries(new FormData(form)), plan: $("#plan").value, logo, previewSlug };
+    if (photos.length > planNow().photos) {
+      const up = biggerPlan(photos.length);
+      $("#photo-msg").scrollIntoView({ block: "center" });
+      return showMsg($("#msg"), `${planNow().name} includes up to ${planNow().photos} photos and you added ${photos.length}. Remove ${photos.length - planNow().photos}${up ? `, or switch to ${up.name}` : ""}.`, false);
+    }
+    const body = { ...Object.fromEntries(new FormData(form)), ...extraBody(), google: undefined, plan: $("#plan").value, logo, previewSlug };
     btn.disabled = true;
     btn.textContent = "Starting secure checkout…";
     try {

@@ -368,7 +368,11 @@
               <dl class="kv">
                 <dt>Contact</dt><dd>${esc([d.contactName, d.contactEmail, d.contactPhone].filter(Boolean).join(" · "))}</dd>
                 ${d.description ? `<dt>About</dt><dd>${esc(d.description)}</dd>` : ""}
+                ${d.type ? `<dt>Kind</dt><dd>${esc(d.type)}${d.extras?.checks?.length ? ` · ${esc(d.extras.checks.join(", "))}` : ""}${(d.extras?.facts || []).map((f) => `\n${esc(f.label)}: ${esc(f.value)}`).join("")}${d.extras?.link ? `\n${esc(d.extras.link.label)}: <a href="${esc(d.extras.link.url)}" target="_blank" rel="noopener">${esc(d.extras.link.url)}</a>` : ""}</dd>` : ""}
                 ${d.services ? `<dt>Services</dt><dd>${esc(d.services)}</dd>` : ""}
+                ${d.menu ? `<dt>Menu</dt><dd>${esc(d.menu)}${(d.menuImageIds || []).length ? `\n${d.menuImageIds.map((x, i) => `<a href="/simg/${esc(x)}.jpg" target="_blank">Menu photo ${i + 1}</a>`).join(" · ")}` : ""}</dd>` : ""}
+                ${(d.photos || []).length ? `<dt>Photos</dt><dd><div style="display:flex;gap:8px;flex-wrap:wrap">${d.photos.map((x) => `<a href="/simg/${esc(x.id)}.jpg" target="_blank" title="${esc(x.label || "")}" style="text-decoration:none;color:inherit;width:120px;font-size:.8rem"><img src="/simg/${esc(x.id)}.jpg" alt="" style="width:120px;height:90px;object-fit:cover;border-radius:8px;display:block">${esc(x.label || "")}</a>`).join("")}</div></dd>` : ""}
+                ${d.googleUrl ? `<dt>Google</dt><dd><a href="${esc(d.googleUrl)}" target="_blank" rel="noopener">Their Google listing (reviews)</a></dd>` : ""}
                 ${d.area ? `<dt>Area</dt><dd>${esc(d.area)}</dd>` : ""}
                 ${d.feature ? `<dt>Power feature</dt><dd>${esc(feat[d.feature] || d.feature)}</dd>` : ""}
                 <dt>Domain</dt><dd>${d.domainStatus === "need" ? `<strong>Needs one, free: pick &amp; register it</strong>${d.domain ? ` (their ideas: ${esc(d.domain)})` : ""}` : esc(d.domain || "—")}</dd>

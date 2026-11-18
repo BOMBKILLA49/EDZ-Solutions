@@ -11,6 +11,7 @@ const PLANS = [
     tagline: "Get online fast. As simple as it gets.",
     delivery: "Live in about 3 days",
     cards: 0,
+    photos: 6, // photos they can upload on the /start form
     features: [
       "1-page unique website no one else has",
       "Your business logo, hours, map and up to 6 photos",
@@ -31,6 +32,7 @@ const PLANS = [
     tagline: "A real website for your brand.",
     delivery: "Live in about 7 days",
     cards: 20,
+    photos: 15,
     features: [
       "Up to 4 unique pages (Home, Services, About & Contact)",
       "Your logo, colors and fonts",
@@ -54,6 +56,7 @@ const PLANS = [
     tagline: "More attention, more customers, for established businesses needing help.",
     delivery: "Live in about 14 days",
     cards: 50,
+    photos: 40,
     features: [
       "Up to 8 pages with more detail on every service",
       "Free domain name included, or we connect yours",
@@ -77,6 +80,7 @@ const PLANS = [
     tagline: "Everything. A website that runs parts of your business.",
     delivery: "Live in about 15–35 days",
     cards: 150,
+    photos: 100,
     features: [
       "Everything in Business",
       "Up to 25 pages",

@@ -17,6 +17,8 @@ const outreach = require("./lib/outreach");
 const inbox = require("./lib/inbox");
 const tradeImages = require("./lib/tradeImages");
 const googlePlaces = require("./lib/googlePlaces");
+const businessTypes = require("./config/businessTypes");
+const startExtras = require("./lib/startExtras");
 
 const PORT = process.env.PORT || 3000;
 const SITE_URL = (process.env.SITE_URL || `http://localhost:${PORT}`).replace(/\/$/, "");
@@ -714,6 +716,7 @@ app.get("/api/plans", (req, res) => {
     plans: plans.PLANS.map((p) => ({ ...p, cardsValueCents: Math.round(p.cards * cheapestCard * 100) })),
     powerFeatures: plans.POWER_FEATURES,
     compare: plans.COMPARE,
+    businessTypes: businessTypes.TYPES,
   });
 });
 
@@ -743,8 +746,23 @@ app.post("/api/plan-checkout", async (req, res) => {
     contactEmail: clean(b.contactEmail, 120),
     contactPhone: clean(b.contactPhone, 40),
     previewSlug: /^[a-z0-9-]{3,90}$/.test(b.previewSlug || "") ? b.previewSlug : null,
+    // Kind of business and its answers, the menu (food & drink), their photos with what each
+    // shows, and their Google listing (only the place ID is kept from Google).
+    type: businessTypes.typeById(b.type)?.id || null,
+    extras: businessTypes.cleanExtras(b.type, b.extras),
+    menu: businessTypes.typeById(b.type)?.menu ? String(b.menu || "").slice(0, 8000) : "",
+    menuImageIds: (Array.isArray(b.menuImageIds) ? b.menuImageIds : []).filter((x) => /^[0-9a-f-]{36}$/i.test(x)).slice(0, 6),
+    photos: (Array.isArray(b.photos) ? b.photos : [])
+      .map((x) => ({ id: /\/simg\/([0-9a-f-]{36})\.jpg$/i.exec(String(x?.url || ""))?.[1], label: clean(x?.label, 80) }))
+      .filter((x) => x.id),
+    googleUrl: /^https:\/\/[^\s"'<>]{6,400}$/i.test(String(b.googleUrl || "").trim()) ? String(b.googleUrl).trim() : "",
+    placeId: /^[\w-]{10,300}$/.test(b.placeId || "") ? b.placeId : "",
   };
   if (!data.business) return res.status(400).json({ error: "Add your business name." });
+  if (data.photos.length > plan.photos) {
+    const more = plans.PLANS.find((x) => x.photos >= data.photos.length);
+    return res.status(400).json({ error: `The ${plan.name} plan includes up to ${plan.photos} photos and you added ${data.photos.length}. Remove ${data.photos.length - plan.photos}${more ? `, or switch to ${more.name} for up to ${more.photos}` : ""}.` });
+  }
   if (!data.contactName || !/^\S+@\S+\.\S+$/.test(data.contactEmail)) return res.status(400).json({ error: "Add your name and a valid email so we can reach you." });
   if (plan.id === "business" && !plans.POWER_FEATURES.some((f) => f.id === data.feature)) return res.status(400).json({ error: "Pick your power feature." });
 
@@ -796,6 +814,8 @@ app.post("/api/plan-checkout", async (req, res) => {
       `INSERT INTO projects (id, plan, stripe_session, data, logo_name, logo_mime, logo_data) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
       [id, plan.id, session.id, data, logo?.name || null, logo?.mime || null, logo?.data || null]
     );
+    const imageIds = [...data.photos.map((x) => x.id), ...data.menuImageIds];
+    if (imageIds.length) await pool.query("UPDATE project_images SET project_id=$1 WHERE id = ANY($2::uuid[]) AND project_id IS NULL", [id, imageIds]);
     res.json({ url: session.url });
   } catch (err) {
     console.error("plan checkout error:", err);
@@ -831,7 +851,15 @@ async function sendProjectAlert(p) {
     ``,
     `Business: ${d.business}${d.industry ? ` (${d.industry})` : ""}`,
     d.description ? `About: ${d.description}` : null,
+    d.type ? `Kind of business: ${businessTypes.typeById(d.type)?.label || d.type}` : null,
+    d.extras?.checks?.length ? `Highlights: ${d.extras.checks.join(", ")}` : null,
+    ...(d.extras?.facts || []).map((f) => `${f.label}: ${f.value}`),
+    d.extras?.link ? `${d.extras.link.label} button: ${d.extras.link.url}` : null,
     d.services ? `Services: ${d.services}` : null,
+    d.menu ? `Menu (read from their photos by AI; they checked it):\n${d.menu}` : null,
+    d.menuImageIds?.length ? `Menu photos: ${d.menuImageIds.map((x) => `${SITE_URL}/simg/${x}.jpg`).join(" ")}` : null,
+    d.photos?.length ? `Photos (${d.photos.length}):\n${d.photos.map((x, i) => `  ${i + 1}. ${SITE_URL}/simg/${x.id}.jpg${x.label ? ` — ${x.label}` : ""}`).join("\n")}` : null,
+    d.googleUrl ? `Google listing (reviews): ${d.googleUrl}` : null,
     d.area ? `Service area: ${d.area}` : null,
     feature ? `Power feature: ${feature.label}` : null,
     d.domainStatus === "need"
@@ -1685,6 +1713,64 @@ function colorFromWords(text) {
 
 // Live website preview for the /start form: the sample we made for them (when they came from
 // one) with whatever they've typed on top, or built from the form alone. Nothing is saved.
+// ---------- /start form extras: photos, menu reading, Google reviews ----------
+// A photo (or a menu page) for their website, uploaded before checkout. Returns its link for the
+// live preview; checkout links it to the project. Public, so rate-limited and resized.
+app.post("/api/start-upload", express.raw({ type: "image/*", limit: "20mb" }), async (req, res) => {
+  if (rateLimited(`upload:${req.ip}`, 120)) return res.status(429).json({ error: "That's a lot of uploads. Please try again in a bit." });
+  const kind = req.query.kind === "menu" ? "menu" : "photo";
+  if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: "No image received." });
+  let image;
+  try {
+    // Menu pages stay larger so small print is still readable.
+    const max = kind === "menu" ? 2400 : 1600;
+    image = await sharp(req.body).rotate().resize({ width: max, height: max, fit: "inside", withoutEnlargement: true }).flatten({ background: "#ffffff" }).jpeg({ quality: 84, mozjpeg: true }).toBuffer();
+  } catch {
+    return res.status(400).json({ error: "Couldn't read that image. Try a JPG or PNG (or a screenshot of it)." });
+  }
+  const id = crypto.randomUUID();
+  await pool.query("INSERT INTO project_images (id, kind, image) VALUES ($1,$2,$3)", [id, kind, image]);
+  pool.query("DELETE FROM project_images WHERE project_id IS NULL AND created_at < now() - interval '2 days'").catch(() => {});
+  res.json({ id, url: `${SITE_URL}/simg/${id}.jpg` });
+});
+
+app.get("/simg/:id.jpg", async (req, res) => {
+  if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) return res.status(404).end();
+  const { rows } = await pool.query("SELECT image FROM project_images WHERE id=$1", [req.params.id]).catch(() => ({ rows: [] }));
+  if (!rows[0]) return res.status(404).end();
+  res.set({ "Content-Type": "image/jpeg", "Cache-Control": "public, max-age=604800", "X-Robots-Tag": "noindex" }).send(rows[0].image);
+});
+
+// Reads their uploaded menu pages with AI into menu text they can check and fix on the form.
+app.post("/api/start-menu", async (req, res) => {
+  if (!openai) return res.status(503).json({ error: "Menu reading isn't available right now. Type your menu in instead." });
+  if (rateLimited(`menu:${req.ip}`, 12)) return res.status(429).json({ error: "Please wait a bit before reading the menu again." });
+  const ids = (Array.isArray(req.body?.ids) ? req.body.ids : []).filter((x) => /^[0-9a-f-]{36}$/i.test(x)).slice(0, 6);
+  if (!ids.length) return res.status(400).json({ error: "Upload a photo of your menu first." });
+  const { rows } = await pool.query("SELECT image FROM project_images WHERE id = ANY($1::uuid[]) AND kind='menu'", [ids]);
+  if (!rows.length) return res.status(400).json({ error: "Upload a photo of your menu first." });
+  try {
+    const sections = await startExtras.readMenu(openai, rows.map((r) => r.image));
+    if (!sections.length) return res.status(422).json({ error: "We couldn't read a menu in that photo. Try a clearer, straight-on photo, or type it in." });
+    res.json({ text: startExtras.menuToText(sections), items: sections.reduce((n, x) => n + x.items.length, 0) });
+  } catch (err) {
+    console.error("menu read failed:", err.message);
+    res.status(502).json({ error: "The menu reader hit a snag. Please try again, or type your menu in." });
+  }
+});
+
+// Their Google Maps link → their rating, reviews and photos for the live preview. The form keeps
+// what we send back and returns it with each preview, so Google is called once per link.
+app.post("/api/start-google", async (req, res) => {
+  if (rateLimited(`google:${req.ip}`, 10)) return res.status(429).json({ error: "Please wait a bit before trying another link." });
+  const b = req.body || {};
+  const placeId = await startExtras.placeIdFromLink(b.url, { business: clean(b.business, 100), address: clean(b.address, 200), area: clean(b.area, 160) });
+  if (!placeId) return res.status(404).json({ error: "We couldn't find that Google listing. Copy the link from the Share button on your Google Maps listing." });
+  const google = await googlePlaces.placeContent(pool, placeId, clean(b.business, 100), { trusted: true });
+  if (!google) return res.status(502).json({ error: "Google didn't send your reviews just now. We'll still add them when we build your site." });
+  res.json({ placeId, google });
+});
+
 app.post("/api/preview-draft", async (req, res) => {
   if (rateLimited(`draft:${req.ip}`, 400)) return res.status(429).json({ error: "Slow down a little." });
   const b = req.body || {};
@@ -1702,7 +1788,22 @@ app.post("/api/preview-draft", async (req, res) => {
   })) if (v !== undefined) d[k] = v;
   if (b.description) d.about = String(b.description).slice(0, 1200);
   if (b.hours) d.hours = clean(b.hours, 300);
-  if (b.services) d.services = lines(b.services).map((name) => ({ name }));
+  // "Name: details" per line (or a comma list), like the admin forms.
+  if (b.services) {
+    const raw = String(b.services);
+    d.services = (/\n/.test(raw.trim()) ? raw.split(/\r?\n/) : raw.split(/,\s*/))
+      .map((l) => l.trim()).filter(Boolean).slice(0, 9)
+      .map((l) => { const i = l.indexOf(":"); return i > 0 ? { name: clean(l.slice(0, i), 60), desc: clean(l.slice(i + 1), 220) } : { name: clean(l, 60) }; });
+  }
+  // Their kind of business: badges, an order/booking button, short facts, and a menu for food & drink.
+  const type = businessTypes.typeById(b.type);
+  if (type) {
+    const extras = businessTypes.cleanExtras(type.id, b.extras);
+    d.badges = extras.checks;
+    d.ctaLink = extras.link;
+    d.typeFacts = extras.facts;
+    if (type.menu) d.menu = startExtras.parseMenu(b.menu);
+  }
   const color = colorFromWords(b.colors);
   if (color) d.color = color;
   if (["modern", "classic", "bold", "friendly"].includes(b.font)) d.font = b.font;
@@ -1710,8 +1811,18 @@ app.post("/api/preview-draft", async (req, res) => {
   // City for the headline: from the sample, or the first town in "Area you serve".
   if (!d.city && d.area) d.city = clean(d.area.split(/,|\band\b/)[0], 60);
   if (!d.business) d.business = "Your Business";
+  // Their uploaded photos (as many as the plan allows), with what each one shows.
+  const planForPhotos = plans.planById(b.plan) || plans.planById("launch");
+  const photos = (Array.isArray(b.photos) ? b.photos : [])
+    .filter((x) => String(x?.url || "").startsWith(`${SITE_URL}/simg/`) && /^[^\s"'<>]+$/.test(x.url))
+    .slice(0, planForPhotos.photos);
+  if (photos.length) {
+    d.photoUrls = photos.map((x) => x.url);
+    d.photoLabels = photos.map((x) => clean(x.label, 80));
+  }
+  const google = startExtras.cleanGoogle(b.google);
   let heroImage = "";
-  if (!(d.photoUrls || []).length) {
+  if (!(d.photoUrls || []).length && !google?.photos.length) {
     const key = await tradeImages.hasTradeImage(pool, d.industry);
     if (key) heroImage = `/trade-img/${key}.jpg`;
     else if (d.industry) tradeImages.ensureTradeImage(pool, openai, IMAGE_MODEL, d.industry);
@@ -1722,7 +1833,7 @@ app.post("/api/preview-draft", async (req, res) => {
   const pages = planPages(plan, plan === "business" ? feature : "");
   const page = pages.some((x) => x.id === b.page) ? b.page : "home";
   res.json({
-    html: renderPreview({ slug: "draft", data: d }, { draft: true, heroImage, claimUrl: "#", plan, page, feature: plan === "business" ? feature : "" }),
+    html: renderPreview({ slug: "draft", data: d }, { draft: true, heroImage, google, claimUrl: "#", plan, page, feature: plan === "business" ? feature : "" }),
     pages: pages.map(({ id, label }) => ({ id, label })),
     page,
     tradePending: !heroImage && Boolean(tradeImages.tradeKey(d.industry)),
@@ -1738,8 +1849,9 @@ app.get("/api/preview-info/:slug", async (req, res) => {
     business: d.business,
     industry: d.industry,
     description: d.about,
-    services: (d.services || []).map((s) => s.name).join("\n"),
+    services: (d.services || []).map((s) => (s.desc ? `${s.name}: ${s.desc}` : s.name)).join("\n"),
     area: d.area || [d.city, d.state].filter(Boolean).join(", "),
+    googleUrl: d.googleMapsUrl || "",
     phone: d.phone,
     email: d.email,
     address: d.address,
