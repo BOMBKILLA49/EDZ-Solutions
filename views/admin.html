@@ -605,7 +605,9 @@
     }
     function bizFields(d = {}, add = false) {
       const v = (x) => esc(x || "");
-      const svc = (d.services || []).map((x) => (x.desc ? `${x.name}: ${x.desc}` : x.name)).join("\n");
+      // Plain services on one comma-separated line; each one with details on its own line.
+      const svcs = d.services || [];
+      const svc = [svcs.filter((x) => !x.desc).map((x) => x.name).join(", "), ...svcs.filter((x) => x.desc).map((x) => `${x.name}: ${x.desc}`)].filter(Boolean).join("\n");
       const food = BTYPES.find((x) => x.id === d.type)?.menu;
       const photoLines = (d.photoUrls || []).map((u, i) => ((d.photoLabels || [])[i] ? `${u} | ${d.photoLabels[i]}` : u)).join("\n");
       return `
@@ -640,7 +642,7 @@
           <div><b style="display:block;margin-bottom:6px">Hours <span class="hint" style="font-weight:400">("—" = not shown)</span></b><input type="hidden" name="hours" value="${v(d.hours)}"><div data-hours></div></div>
         </div>
         <div class="row2">
-          <label>Services <span class="hint">(one per line; add details after a colon, e.g. "Brake repair: same-day service")</span><textarea name="services" rows="4">${v(svc)}</textarea></label>
+          <label>Services <span class="hint">(separate with commas, e.g. "Drain cleaning, Water heaters, Sewer repair"; add details after a colon: "Brakes: same-day service")</span><textarea name="services" rows="4">${v(svc)}</textarea></label>
           <label>About <span class="hint">(facts from their page or the call)</span><textarea name="about" rows="4">${v(d.about)}</textarea></label>
         </div>
         <div class="row2">
@@ -715,7 +717,10 @@
       const lines = (x) => String(x || "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
       return {
         ...f,
-        services: lines(f.services).map((l) => { const i = l.indexOf(":"); return i > 0 ? { name: l.slice(0, i).trim(), desc: l.slice(i + 1).trim() } : { name: l }; }),
+        // Commas or new lines separate services; a line with details ("Name: details, more") stays whole.
+        services: lines(f.services)
+          .flatMap((l) => (l.includes(":") ? [l] : l.split(",").map((x) => x.trim()).filter(Boolean)))
+          .map((l) => { const i = l.indexOf(":"); return i > 0 ? { name: l.slice(0, i).trim(), desc: l.slice(i + 1).trim() } : { name: l }; }),
         // "link | what it shows" per line.
         photoUrls: lines(f.photoUrls).map((l) => l.split("|")[0].trim()),
         photoLabels: lines(f.photoUrls).map((l) => l.split("|").slice(1).join("|").trim()),
