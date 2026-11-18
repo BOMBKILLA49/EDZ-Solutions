@@ -1318,6 +1318,7 @@ app.post("/api/admin/prospects", requireAdmin, async (req, res) => {
        ON CONFLICT DO NOTHING RETURNING id, slug`,
       [crypto.randomUUID(), p.slug, p.email, p.domain, p.data, crypto.randomBytes(16).toString("hex"), p.channel, p.phoneKey, p.channel === "call" ? "call" : "new"]
     );
+    if (rows[0]) await claimImages(rows[0].id, p.data);
     if (rows[0]) added.push({ id: rows[0].id, slug: rows[0].slug, business: p.data.business, channel: p.channel });
     else skipped.push({ business: p.data.business, reason: "already in the list (same email, website or phone)" });
   }
@@ -1445,6 +1446,7 @@ app.post("/api/admin/prospects/:id/info", requireAdmin, async (req, res) => {
       "UPDATE prospects SET data=$2, phone_key=COALESCE($3, phone_key), shot=NULL WHERE id=$1",
       [req.params.id, data, rows[0].domain ? null : p.phoneKey]
     );
+    await claimImages(req.params.id, data);
   } catch (err) {
     if (err.code === "23505") return res.status(400).json({ error: "Another business on the list already has that phone number or Facebook page." });
     throw err;
@@ -1452,10 +1454,10 @@ app.post("/api/admin/prospects/:id/info", requireAdmin, async (req, res) => {
   res.json({ ok: true });
 });
 
-// Upload a logo or photo for a business's sample site (Edit info). Returns its link, which the
-// form puts in the logo/photo field; Save stores it like any other image link.
+// Upload a logo or photo for a business's sample site ("+ Add a business" or Edit info). Returns
+// its link, which the form puts in the logo/photo field; saving the business links the image to it.
 // Logos keep transparency (PNG, up to 800 px); photos are JPEG, up to 1600 px, turned upright.
-app.post("/api/admin/prospects/:id/upload", requireAdmin, express.raw({ type: "image/*", limit: "20mb" }), async (req, res) => {
+async function saveUpload(req, res, prospectId) {
   const logo = req.query.kind === "logo";
   if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: "No image received." });
   let out;
@@ -1467,12 +1469,24 @@ app.post("/api/admin/prospects/:id/upload", requireAdmin, express.raw({ type: "i
   }
   const id = crypto.randomUUID();
   try {
-    await pool.query("INSERT INTO prospect_images (id, prospect_id, image, type) VALUES ($1,$2,$3,$4)", [id, req.params.id, out, logo ? "png" : "jpg"]);
+    await pool.query("INSERT INTO prospect_images (id, prospect_id, image, type) VALUES ($1,$2,$3,$4)", [id, prospectId, out, logo ? "png" : "jpg"]);
   } catch {
     return res.status(404).json({ error: "No such business." });
   }
+  // Uploads for a business that was never added.
+  pool.query("DELETE FROM prospect_images WHERE prospect_id IS NULL AND created_at < now() - interval '2 days'").catch(() => {});
   res.json({ url: `${SITE_URL}/pimg/${id}.${logo ? "png" : "jpg"}` });
-});
+}
+const imageBody = express.raw({ type: "image/*", limit: "20mb" });
+app.post("/api/admin/prospects/:id/upload", requireAdmin, imageBody, (req, res) => saveUpload(req, res, req.params.id));
+app.post("/api/admin/uploads", requireAdmin, imageBody, (req, res) => saveUpload(req, res, null));
+
+// Links images uploaded before the business existed (their /pimg/ ids are in its logo/photo links).
+function claimImages(prospectId, data) {
+  const ids = [data.logoUrl, ...(data.photoUrls || [])].map((u) => /\/pimg\/([0-9a-f-]{36})\./i.exec(u || "")?.[1]).filter(Boolean);
+  if (!ids.length) return Promise.resolve();
+  return pool.query("UPDATE prospect_images SET prospect_id=$1 WHERE id = ANY($2::uuid[]) AND prospect_id IS NULL", [prospectId, ids]).catch((e) => console.error("claim images failed:", e));
+}
 
 app.get("/pimg/:id.:ext", async (req, res) => {
   if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) return res.status(404).end();
