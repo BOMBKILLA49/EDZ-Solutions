@@ -132,7 +132,7 @@ async function search(query) {
     headers: {
       "Content-Type": "application/json",
       "X-Goog-Api-Key": KEY,
-      "X-Goog-FieldMask": "places.displayName,places.websiteUri,places.nationalPhoneNumber,places.formattedAddress,places.addressComponents,places.businessStatus,places.regularOpeningHours,places.primaryTypeDisplayName,places.googleMapsUri",
+      "X-Goog-FieldMask": "places.id,places.displayName,places.websiteUri,places.nationalPhoneNumber,places.formattedAddress,places.addressComponents,places.businessStatus,places.regularOpeningHours,places.primaryTypeDisplayName,places.googleMapsUri",
     },
     body: JSON.stringify({ textQuery: query, pageSize: 20, regionCode: "US" }),
   });
@@ -219,6 +219,7 @@ async function pool(items, n, fn) {
       address: p.formattedAddress?.replace(/, USA$/, "") || "",
       hours: (p.regularOpeningHours?.weekdayDescriptions || []).join("\n"),
       googleMapsUrl: p.googleMapsUri || "",
+      placeId: p.id || "", // the sample site shows their Google photos, rating and reviews
       source: `Google Places search: ${q}`,
     };
   };

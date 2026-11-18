@@ -16,6 +16,7 @@ const { renderPreview, planPages, safeUrl, hexColor } = require("./lib/preview")
 const outreach = require("./lib/outreach");
 const inbox = require("./lib/inbox");
 const tradeImages = require("./lib/tradeImages");
+const googlePlaces = require("./lib/googlePlaces");
 
 const PORT = process.env.PORT || 3000;
 const SITE_URL = (process.env.SITE_URL || `http://localhost:${PORT}`).replace(/\/$/, "");
@@ -1278,6 +1279,9 @@ function prospectFromLead(lead) {
     facebookUrl: /^https:\/\/(www\.|m\.)?facebook\.com\//.test(l.facebookUrl || "") ? clean(l.facebookUrl, 200) : "",
     yelpUrl: /^https:\/\/(www\.|m\.)?yelp\.com\//.test(l.yelpUrl || "") ? clean(l.yelpUrl, 200) : "",
     googleMapsUrl: /^https:\/\/(maps\.google\.com|www\.google\.com\/maps|maps\.app\.goo\.gl)/.test(l.googleMapsUrl || "") ? clean(l.googleMapsUrl, 300) : "",
+    // Google place ID (the only Google data we may keep): the sample page loads their Google photos,
+    // rating and reviews live with it. Unset = not looked up yet; "" = no Google listing found.
+    ...(l.placeId !== undefined ? { placeId: /^[\w-]{10,300}$/.test(l.placeId || "") ? l.placeId : "" } : {}),
   };
   if (!data.business) return { error: "no business name" };
   const hasEmail = /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(email);
@@ -1444,6 +1448,8 @@ app.post("/api/admin/prospects/:id/info", requireAdmin, async (req, res) => {
   }
   // The email here is shown on their site; "Found their email" is what moves them to the email queue.
   const data = { ...old, ...p.data, noWebsite: old.noWebsite ?? p.data.noWebsite, emailSource: old.emailSource || p.data.emailSource, source: old.source || p.data.source };
+  // New name or address: find their Google listing again on the next page view.
+  if (["business", "address", "city", "state"].some((k) => (old[k] || "") !== (data[k] || ""))) delete data.placeId;
   try {
     await pool.query(
       "UPDATE prospects SET data=$2, phone_key=COALESCE($3, phone_key), shot=NULL WHERE id=$1",
@@ -1563,17 +1569,29 @@ app.get("/p/:slug", async (req, res) => {
   // Email security scanners (Microsoft, Proofpoint...) open every link within a few minutes of
   // delivery, so visits in the first 5 minutes after sending aren't counted as views.
   const scannerWindow = rows[0].sent_at && Date.now() - new Date(rows[0].sent_at) < 5 * 60 * 1000;
-  if (!shot && !req.query.admin && !scannerWindow && !/bot|crawl|spider|preview|scan|fetch/i.test(req.headers["user-agent"] || "")) {
+  const robot = /bot|crawl|spider|preview|scan|fetch/i.test(req.headers["user-agent"] || "");
+  if (!shot && !req.query.admin && !scannerWindow && !robot) {
     pool.query("UPDATE prospects SET views=views+1, last_view_at=now() WHERE id=$1", [rows[0].id]).catch(() => {});
+  }
+  // Their Google photos, rating and reviews, loaded live for people (not the stored screenshot,
+  // link scanners or bots: Google's content may not be saved, and each load is a paid call).
+  let googleInfo = null;
+  if (!shot && !robot && !scannerWindow) {
+    const d = rows[0].data;
+    if (d.placeId === undefined) {
+      d.placeId = await googlePlaces.findPlaceId(d).catch(() => undefined);
+      if (d.placeId !== undefined) pool.query("UPDATE prospects SET data = data || jsonb_build_object('placeId', $2::text) WHERE id=$1", [rows[0].id, d.placeId]).catch(() => {});
+    }
+    googleInfo = await googlePlaces.placeContent(pool, d.placeId, d.business);
   }
   // No photos of their own: use the trade's stock photo (made in the background if it's new).
   let heroImage = "";
-  if (!(rows[0].data.photoUrls || []).length) {
+  if (!(rows[0].data.photoUrls || []).length && !googleInfo?.photos.length) {
     const key = await tradeImages.hasTradeImage(pool, rows[0].data.industry);
     if (key) heroImage = `/trade-img/${key}.jpg`;
     else tradeImages.ensureTradeImage(pool, openai, IMAGE_MODEL, rows[0].data.industry);
   }
-  res.set("X-Robots-Tag", "noindex").type("html").send(renderPreview(rows[0], { shot, siteUrl: SITE_URL, hasShot: rows[0].has_shot, heroImage, claimUrl: `/start?plan=launch&preview=${rows[0].slug}` }));
+  res.set("X-Robots-Tag", "noindex").type("html").send(renderPreview(rows[0], { shot, siteUrl: SITE_URL, hasShot: rows[0].has_shot, heroImage, google: googleInfo, claimUrl: `/start?plan=launch&preview=${rows[0].slug}` }));
 });
 
 // The trade's AI stock photo (hero background for sample pages without the business's photos).
