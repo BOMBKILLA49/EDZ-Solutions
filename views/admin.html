@@ -940,7 +940,10 @@
     });
     document.getElementById("refresh").addEventListener("click", load);
     load();
-    setInterval(load, 60000);
+    // Refresh every minute, but not while something is being filled in: redrawing the call list
+    // would wipe an open Edit info / Found their email form (and anything typed in it).
+    const busy = () => document.querySelector("#call-list form") || document.activeElement?.matches("input, textarea, select");
+    setInterval(() => { if (!busy()) load(); }, 60000);
   </script>
 </body>
 </html>
