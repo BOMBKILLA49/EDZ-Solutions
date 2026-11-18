@@ -80,6 +80,11 @@
     .call-card .edit-info { border-top: 1px solid var(--line); padding-top: 14px; }
     .call-card .edit-info .btns { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     .add-biz .up-btn { display: inline-block; margin: -6px 0 12px; font-size: .85rem; font-weight: 700; padding: 7px 12px; border-radius: 9px; border: 1px solid var(--line); background: #fff; color: var(--ink); cursor: pointer; }
+    .add-biz .type-opts { background: var(--bg-soft); border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; }
+    .add-biz .type-opts:empty { display: none; }
+    .add-biz .type-opts .checks { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-bottom: 8px; }
+    .add-biz .type-opts .checks label { display: inline-flex; align-items: center; gap: 6px; margin: 0; font-weight: 600; }
+    .add-biz .type-opts .checks input { width: auto; margin: 0; }
     .add-biz .thumbs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
     .add-biz .thumbs img { height: 64px; max-width: 120px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); background: var(--bg-soft); }
     .add-biz .thumbs img.logo { object-fit: contain; padding: 4px; }
@@ -580,14 +585,33 @@
       window._calls = Object.fromEntries(Object.values(by).flat().map((p) => [p.id, p]));
     }
     // Every fact the sample site can show, shared by "+ Add a business" and "Edit info".
+    // Kinds of business and their questions (config/businessTypes.js), same as the /start form.
+    let BTYPES = [];
+    const menuText = (menu) => (menu || []).map((m) => [m.name, ...m.items.map((i) => `- ${[i.name, i.price || "", i.desc || ""].join(" | ").replace(/( \| )+$/, "")}`)].join("\n")).join("\n\n");
+    function typeOpts(typeId, answers = {}) {
+      const t = BTYPES.find((x) => x.id === typeId);
+      if (!t) return "";
+      const a = answers || {};
+      const checks = t.options.filter((o) => o.type === "check").map((o) => `<label><input type="checkbox" data-x="${o.key}"${a[o.key] ? " checked" : ""}> ${esc(o.label)}</label>`).join("");
+      const rest = t.options.filter((o) => o.type !== "check").map((o) => `<label>${esc(o.label)}${o.hint ? ` <span class="hint">(${esc(o.hint)})</span>` : ""}<input data-x="${o.key}" value="${esc(a[o.key] || "")}" placeholder="${o.type === "link" ? "https://…" : esc(o.placeholder || "")}"></label>`).join("");
+      return `${checks ? `<div class="checks">${checks}</div>` : ""}${rest}`;
+    }
     function bizFields(d = {}, add = false) {
       const v = (x) => esc(x || "");
       const svc = (d.services || []).map((x) => (x.desc ? `${x.name}: ${x.desc}` : x.name)).join("\n");
+      const food = BTYPES.find((x) => x.id === d.type)?.menu;
+      const photoLines = (d.photoUrls || []).map((u, i) => ((d.photoLabels || [])[i] ? `${u} | ${d.photoLabels[i]}` : u)).join("\n");
       return `
         <div class="row3">
           <label>Business name *<input name="business" required value="${v(d.business)}"></label>
           <label>Owner's first name <span class="hint">(used in your messages)</span><input name="contactName" value="${v(d.contactName)}"></label>
           <label>What they do<input name="industry" value="${v(d.industry)}" placeholder="Lawn care, roofing, bakery…"></label>
+        </div>
+        <label>Kind of business <span class="hint">(adds badges, an order/booking button and, for food, a menu)</span><select name="type" data-typesel><option value="">Pick one…</option>${BTYPES.map((t) => `<option value="${t.id}"${t.id === d.type ? " selected" : ""}>${esc(t.label)}</option>`).join("")}</select></label>
+        <div class="type-opts" data-typeopts>${typeOpts(d.type, d.extras)}</div>
+        <div data-menubox${food ? "" : " hidden"}>
+          <label>Menu <span class="hint">(a section name on its own line, then "- Item | price | description")</span><textarea name="menu" rows="5">${v(menuText(d.menu))}</textarea></label>
+          <label class="up-btn">Read a menu photo with AI<input type="file" accept="image/*" multiple data-menuup hidden></label> <span class="meta" data-menumsg></span>
         </div>
         <div class="row3">
           <label>Phone<input name="phone" type="tel" value="${v(d.phone)}"></label>
@@ -618,13 +642,54 @@
             <label class="up-btn">Upload logo<input type="file" accept="image/*" data-up="logo" hidden></label>
           </div>
           <div>
-            <label>Photos <span class="hint">(up to 6; upload them, or paste links one per line)</span><textarea name="photoUrls" rows="2">${v((d.photoUrls || []).join("\n"))}</textarea></label>
+            <label>Photos <span class="hint">(up to 6, one per line; after the link add " | " and what it shows)</span><textarea name="photoUrls" rows="3" placeholder="https://… | our storefront">${v(photoLines)}</textarea></label>
             <label class="up-btn">Upload photos<input type="file" accept="image/*" multiple data-up="photo" hidden></label>
           </div>
         </div>
         <div class="thumbs" data-thumbs></div>`;
     }
     document.getElementById("add-biz-fields").innerHTML = bizFields({}, true);
+    fetch("/api/plans").then((r) => r.json()).then((out) => {
+      BTYPES = out.businessTypes || [];
+      document.getElementById("add-biz-fields").innerHTML = bizFields({}, true);
+    });
+    // Kind of business picked: show its questions, and the menu box for food & drink.
+    document.addEventListener("change", (e) => {
+      const sel = e.target.closest("select[data-typesel]");
+      if (!sel) return;
+      const form = sel.closest("form");
+      form.querySelector("[data-typeopts]").innerHTML = typeOpts(sel.value);
+      form.querySelector("[data-menubox]").hidden = !BTYPES.find((x) => x.id === sel.value)?.menu;
+    });
+    // Menu photo → AI types it up into the menu box.
+    document.addEventListener("change", async (e) => {
+      const input = e.target.closest("input[data-menuup]");
+      if (!input) return;
+      const form = input.closest("form");
+      const msg = form.querySelector("[data-menumsg]");
+      const files = [...input.files].slice(0, 6);
+      input.value = "";
+      msg.style.color = "";
+      msg.textContent = "Uploading the menu…";
+      try {
+        const urls = [];
+        for (const f of files) {
+          const res = await fetch("/api/admin/uploads?kind=photo", { method: "POST", headers: { "Content-Type": f.type || "image/jpeg" }, body: f });
+          const out = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(out.error || "Upload failed.");
+          urls.push(out.url);
+        }
+        msg.textContent = "Reading the menu with AI… (10–30 seconds)";
+        const res = await fetch("/api/admin/menu-read", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ urls }) });
+        const out = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(out.error || "Couldn't read the menu.");
+        form.elements.menu.value = out.text;
+        msg.textContent = `Found ${out.items} items. Check them, then save.`;
+      } catch (err) {
+        msg.style.color = "var(--err)";
+        msg.textContent = err.message;
+      }
+    });
     // "Edit info": fill in what the lead search missed. Their sample site reads it live.
     function editForm(p) {
       return `<form class="add-biz edit-info" data-bizform data-infofor="${p.id}">${bizFields(p.data || {})}
@@ -638,14 +703,18 @@
       return {
         ...f,
         services: lines(f.services).map((l) => { const i = l.indexOf(":"); return i > 0 ? { name: l.slice(0, i).trim(), desc: l.slice(i + 1).trim() } : { name: l }; }),
-        photoUrls: lines(f.photoUrls),
+        // "link | what it shows" per line.
+        photoUrls: lines(f.photoUrls).map((l) => l.split("|")[0].trim()),
+        photoLabels: lines(f.photoUrls).map((l) => l.split("|").slice(1).join("|").trim()),
+        extras: Object.fromEntries([...form.querySelectorAll("[data-x]")].map((el) => [el.dataset.x, el.type === "checkbox" ? el.checked : el.value.trim()])),
+        menu: f.menu || "",
       };
     }
     // Previews of the logo and photos in the Edit info form (only https links, like the site).
     function showThumbs(form) {
       const ok = (u) => /^https:\/\/[^\s"'<>]+$/i.test(u);
       const logo = form.elements.logoUrl.value.trim();
-      const photos = form.elements.photoUrls.value.split(/\r?\n/).map((l) => l.trim()).filter(ok);
+      const photos = form.elements.photoUrls.value.split(/\r?\n/).map((l) => l.split("|")[0].trim()).filter(ok);
       form.querySelector("[data-thumbs]").innerHTML = (ok(logo) ? `<img class="logo" src="${esc(logo)}" alt="Logo">` : "") + photos.map((u) => `<img src="${esc(u)}" alt="Photo">`).join("");
     }
     document.addEventListener("input", (e) => {
@@ -668,7 +737,7 @@
         const out = await res.json().catch(() => ({}));
         if (!res.ok) { msg.style.color = "var(--err)"; msg.textContent = `${file.name}: ${out.error || "upload failed."}`; input.value = ""; showThumbs(form); return; }
         if (logo) form.elements.logoUrl.value = out.url;
-        else form.elements.photoUrls.value = [...form.elements.photoUrls.value.split(/\r?\n/).map((l) => l.trim()).filter(Boolean), out.url].join("\n");
+        else form.elements.photoUrls.value = [...form.elements.photoUrls.value.split(/\r?\n/).map((l) => l.trim()).filter(Boolean), `${out.url} | `].join("\n");
       }
       input.value = "";
       showThumbs(form);

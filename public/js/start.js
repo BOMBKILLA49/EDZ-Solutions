@@ -29,7 +29,15 @@
           $("#domain-status").value = "need";
           $("#domain-status").dispatchEvent(new Event("change"));
         }
-        if (!$("#project [name=type]").value && info.industry) pickType(guessType(info.industry) || "other");
+        // Their kind of business and its answers from the sample (else a guess from what they do).
+        const t = typeOf(info.type) ? info.type : info.industry ? guessType(info.industry) || "other" : "";
+        if (t) {
+          pickType(t);
+          for (const [k, v] of Object.entries(info.extras || {})) {
+            const el = document.querySelector(`#type-opts [data-x="${k}"]`);
+            if (el) el.type === "checkbox" ? (el.checked = Boolean(v)) : (el.value = v);
+          }
+        }
         if (info.googleUrl) loadGoogle();
         $("#preview-note").hidden = false;
         $("#preview-link").href = `/p/${encodeURIComponent(previewSlug)}?admin=1`;
@@ -88,10 +96,12 @@
     });
     const field = (o) => (o.type === "check"
       ? `<label><input type="checkbox" data-x="${o.key}"> ${esc(o.label)}</label>`
-      : `<label>${esc(o.label)}<input data-x="${o.key}" ${o.type === "link" ? `type="url" placeholder="https://…"` : `placeholder="${esc(o.placeholder || "")}"`}></label>`);
+      : `<label>${esc(o.label)}${o.hint ? ` <span class="hint">(${esc(o.hint)})</span>` : ""}<input data-x="${o.key}" ${o.type === "link" ? `type="url" placeholder="https://…"` : `placeholder="${esc(o.placeholder || "")}"`}></label>`);
     const checks = t.options.filter((o) => o.type === "check");
     const others = t.options.filter((o) => o.type !== "check");
-    $("#type-opts").innerHTML = `${checks.length ? `<div class="checks">${checks.map(field).join("")}</div>` : ""}${others.length ? `<div class="row">${others.map(field).join("")}</div>` : ""}`;
+    const links = others.filter((o) => o.type === "link");
+    const texts = others.filter((o) => o.type !== "link");
+    $("#type-opts").innerHTML = `${checks.length ? `<div class="checks">${checks.map(field).join("")}</div>` : ""}${texts.length ? `<div class="row">${texts.map(field).join("")}</div>` : ""}${links.map(field).join("")}`;
     $("#services-label").textContent = t.servicesLabel;
     $("#services-hint").textContent = `(${t.servicesHint})`;
     $("#project [name=industry]").placeholder = t.examples;

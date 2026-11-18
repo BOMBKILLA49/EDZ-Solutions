@@ -1296,7 +1296,23 @@ function prospectFromLead(lead) {
       .slice(0, 9),
     website: clean(l.website, 200),
     logoUrl: safeUrl(l.logoUrl),
-    photoUrls: (Array.isArray(l.photoUrls) ? l.photoUrls : []).map(safeUrl).filter(Boolean).slice(0, 6),
+    // Photos with what each one shows (labels line up with the links).
+    ...(() => {
+      const pairs = (Array.isArray(l.photoUrls) ? l.photoUrls : [])
+        .map((u, i) => [safeUrl(u), clean((Array.isArray(l.photoLabels) ? l.photoLabels : [])[i], 80)])
+        .filter(([u]) => u)
+        .slice(0, 6);
+      return { photoUrls: pairs.map(([u]) => u), photoLabels: pairs.map(([, t]) => t) };
+    })(),
+    // Kind of business and its answers (badges, an order/booking button, short facts) and, for
+    // food & drink, the menu ("Section" lines, then "- Item | price | description").
+    ...(() => {
+      const type = businessTypes.typeById(l.type);
+      if (!type) return { type: "" };
+      const x = businessTypes.cleanExtras(type.id, l.extras);
+      const menuText = Array.isArray(l.menu) ? startExtras.menuToText(l.menu) : String(l.menu || "");
+      return { type: type.id, extras: businessTypes.cleanAnswers(type.id, l.extras), badges: x.checks, ctaLink: x.link, typeFacts: x.facts, menu: type.menu ? startExtras.parseMenu(menuText) : [] };
+    })(),
     color: hexColor(l.color, ""),
     hook: clean(l.hook, 200),
     whyOutdated: clean(l.whyOutdated, 300),
@@ -1467,7 +1483,7 @@ app.post("/api/admin/prospects/:id/info", requireAdmin, async (req, res) => {
   if (!rows[0]) return res.status(404).json({ error: "No such business." });
   if (rows[0].channel !== "call") return res.status(400).json({ error: "Only call-list businesses can be edited here." });
   const old = rows[0].data || {};
-  const fields = ["business", "contactName", "industry", "city", "state", "area", "phone", "email", "address", "hours", "tagline", "about", "services", "facebookUrl", "yelpUrl", "googleMapsUrl", "logoUrl", "photoUrls"];
+  const fields = ["business", "contactName", "industry", "city", "state", "area", "phone", "email", "address", "hours", "tagline", "about", "services", "facebookUrl", "yelpUrl", "googleMapsUrl", "logoUrl", "photoUrls", "photoLabels", "type", "extras", "menu"];
   const input = Object.fromEntries(fields.filter((k) => k in req.body).map((k) => [k, req.body[k]]));
   const p = prospectFromLead({ ...old, ...input });
   if (p.error) return res.status(400).json({ error: `Couldn't save: ${p.error}.` });
@@ -1517,6 +1533,23 @@ async function saveUpload(req, res, prospectId) {
 const imageBody = express.raw({ type: "image/*", limit: "20mb" });
 app.post("/api/admin/prospects/:id/upload", requireAdmin, imageBody, (req, res) => saveUpload(req, res, req.params.id));
 app.post("/api/admin/uploads", requireAdmin, imageBody, (req, res) => saveUpload(req, res, null));
+
+// Reads menu photos uploaded in the admin forms (their /pimg/ links) into menu text.
+app.post("/api/admin/menu-read", requireAdmin, async (req, res) => {
+  if (!openai) return res.status(503).json({ error: "Menu reading isn't set up (no OpenAI key)." });
+  const ids = (Array.isArray(req.body?.urls) ? req.body.urls : []).map((u) => /\/pimg\/([0-9a-f-]{36})\./i.exec(u || "")?.[1]).filter(Boolean).slice(0, 6);
+  if (!ids.length) return res.status(400).json({ error: "Upload a photo of the menu first." });
+  const { rows } = await pool.query("SELECT image FROM prospect_images WHERE id = ANY($1::uuid[])", [ids]);
+  try {
+    const images = await Promise.all(rows.map((r) => sharp(r.image).flatten({ background: "#ffffff" }).jpeg().toBuffer()));
+    const sections = await startExtras.readMenu(openai, images);
+    if (!sections.length) return res.status(422).json({ error: "Couldn't read a menu in that photo. Try a clearer, straight-on photo." });
+    res.json({ text: startExtras.menuToText(sections), items: sections.reduce((n, x) => n + x.items.length, 0) });
+  } catch (err) {
+    console.error("admin menu read failed:", err.message);
+    res.status(502).json({ error: "The menu reader hit a snag. Try again." });
+  }
+});
 
 // Links images uploaded before the business existed (their /pimg/ ids are in its logo/photo links).
 function claimImages(prospectId, data) {
@@ -1855,6 +1888,9 @@ app.get("/api/preview-info/:slug", async (req, res) => {
     services: (d.services || []).map((s) => (s.desc ? `${s.name}: ${s.desc}` : s.name)).join("\n"),
     area: d.area || [d.city, d.state].filter(Boolean).join(", "),
     googleUrl: d.googleMapsUrl || "",
+    type: d.type || "",
+    extras: d.extras || {},
+    menu: (d.menu || []).length ? startExtras.menuToText(d.menu) : "",
     phone: d.phone,
     email: d.email,
     address: d.address,

@@ -1,7 +1,7 @@
 // Kinds of business on the /start form. Each asks its own extra questions; the answers show on the
 // website preview (badges under the headline, an order/booking button, a menu) and go to the project.
 //   check: a yes/no that becomes a badge ("Free estimates")
-//   link:  a button in the hero ("Order online" → their ordering page)
+//   link:  a button in the hero ("Order online" → their ordering page); `hint` explains it on the form
 //   text:  a short fact (years in business, license number...)
 //   menu:  food & drink only: photos of the menu, read by AI into a menu section
 
@@ -18,7 +18,7 @@ const TYPES = [
       { key: "takeout", type: "check", label: "Takeout" },
       { key: "delivery", type: "check", label: "Delivery" },
       { key: "catering", type: "check", label: "Catering" },
-      { key: "orderLink", type: "link", label: "Online ordering link", button: "Order online" },
+      { key: "orderLink", type: "link", label: "Where customers order online", hint: "optional: DoorDash, Uber Eats, Grubhub, Toast, Square… Leave blank if you don't take online orders", button: "Order online" },
     ],
   },
   {
@@ -58,7 +58,7 @@ const TYPES = [
     options: [
       { key: "walkIns", type: "check", label: "Walk-ins welcome" },
       { key: "appointments", type: "check", label: "By appointment" },
-      { key: "bookingLink", type: "link", label: "Online booking link", button: "Book now" },
+      { key: "bookingLink", type: "link", label: "Where customers book online", hint: "optional: Booksy, Vagaro, Square Appointments, Calendly… Leave blank if you don't take online bookings", button: "Book now" },
     ],
   },
   {
@@ -70,7 +70,7 @@ const TYPES = [
     options: [
       { key: "pickup", type: "check", label: "In-store pickup" },
       { key: "shipping", type: "check", label: "We ship" },
-      { key: "storeLink", type: "link", label: "Online store link", button: "Shop online" },
+      { key: "storeLink", type: "link", label: "Where customers shop online", hint: "optional: Etsy, Shopify, Square, Facebook Shop… Leave blank if you don't sell online", button: "Shop online" },
     ],
   },
   {
@@ -102,4 +102,14 @@ function cleanExtras(typeId, input = {}) {
   return out;
 }
 
-module.exports = { TYPES, typeById, cleanExtras };
+// The raw answers (for filling the form back in): checks as true, links and text as strings.
+function cleanAnswers(typeId, input = {}) {
+  const t = typeById(typeId);
+  if (!t || !input || typeof input !== "object") return {};
+  return Object.fromEntries(t.options.map((o) => {
+    const v = input[o.key];
+    return [o.key, o.type === "check" ? v === true || v === "on" || v === "true" : String(v || "").replace(/[\u0000-\u001f]/g, " ").trim().slice(0, o.type === "link" ? 300 : 80)];
+  }).filter(([, v]) => v));
+}
+
+module.exports = { TYPES, typeById, cleanExtras, cleanAnswers };
