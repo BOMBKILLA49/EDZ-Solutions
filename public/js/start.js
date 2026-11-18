@@ -39,10 +39,13 @@
           }
         }
         if (info.googleUrl) loadGoogle();
+        mountHours(); // their hours from the sample fill the dropdowns
         $("#preview-note").hidden = false;
         $("#preview-link").href = `/p/${encodeURIComponent(previewSlug)}?admin=1`;
       });
   }
+  const mountHours = () => HoursPicker.mount($("#hours-picker"), $("#project [name=hours]"));
+  mountHours();
   $("#plan").innerHTML = plans.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join("");
   // Old links (?plan=starter, business, solution) go to Website + Growth.
   const OLD = { starter: "growth", business: "growth", solution: "growth" };

@@ -65,6 +65,12 @@
     .photo-row.over { opacity: .45; }
     .menu-thumbs { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
     .menu-thumbs img { height: 70px; border-radius: 8px; border: 1px solid var(--line); }
+    .hours-picker { margin: 0 0 18px; }
+    .hp-rows { display: grid; gap: 6px; }
+    .hp-row { display: grid; grid-template-columns: 44px minmax(0, 150px) auto minmax(0, 150px); gap: 8px; align-items: center; }
+    .hp-row select { margin: 0; padding: 7px 8px; }
+    .hp-row .hp-to { color: var(--muted); font-size: .9rem; }
+    .hp-copy { margin-top: 8px; font-size: .9rem; }
     .due { display: flex; justify-content: space-between; border-top: 1px solid var(--line); padding-top: 12px; margin-top: 14px; font-weight: 700; color: var(--ink); }
   </style>
 </head>
@@ -111,7 +117,9 @@
             <label>Email<input name="email" type="email"></label>
           </div>
           <label>Address <span class="hint">(optional; leave blank if you don't want it shown)</span><input name="address"></label>
-          <label>Hours <span class="hint">(optional)</span><input name="hours" placeholder="Mon–Fri 8am–5pm, Sat by appointment"></label>
+          <p style="margin:0 0 6px;font-weight:700;color:var(--ink)">Hours <span class="hint" style="font-weight:400">(optional; pick when you open and close each day, leave "—" to skip a day)</span></p>
+          <input type="hidden" name="hours">
+          <div class="hours-picker" id="hours-picker"></div>
           <label>Your Google Maps link <span class="hint">(optional; shows your star rating and reviews. On Google Maps, open your business and tap Share → Copy link)</span><input name="googleUrl" type="url" placeholder="https://maps.app.goo.gl/…"></label>
           <div class="msg" id="google-msg" role="status"></div>
         </fieldset>
@@ -197,6 +205,7 @@
   </section>
 
   <script src="/js/site.js"></script>
+  <script src="/js/hours.js"></script>
   <script src="/js/start.js"></script>
 </body>
 </html>

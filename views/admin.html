@@ -85,6 +85,11 @@
     .add-biz .type-opts .checks { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-bottom: 8px; }
     .add-biz .type-opts .checks label { display: inline-flex; align-items: center; gap: 6px; margin: 0; font-weight: 600; }
     .add-biz .type-opts .checks input { width: auto; margin: 0; }
+    .hp-rows { display: grid; gap: 5px; }
+    .hp-row { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto minmax(0, 1fr); gap: 6px; align-items: center; }
+    .hp-row select { margin: 0; padding: 5px 6px; font-size: .88rem; }
+    .hp-row .hp-to { color: var(--muted); font-size: .85rem; }
+    .hp-copy { margin-top: 6px; font-size: .85rem; }
     .add-biz .thumbs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
     .add-biz .thumbs img { height: 64px; max-width: 120px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); background: var(--bg-soft); }
     .add-biz .thumbs img.logo { object-fit: contain; padding: 4px; }
@@ -191,6 +196,7 @@
     </section>
   </main>
 
+  <script src="/js/hours.js"></script>
   <script>
     const FILTERS = [
       ["paid", "To engrave"],
@@ -629,7 +635,7 @@
         </div>
         <div class="row2">
           <label>Headline <span class="hint">(optional, e.g. their slogan)</span><input name="tagline" maxlength="110" value="${v(d.tagline)}"></label>
-          <label>Hours<input name="hours" value="${v(d.hours)}" placeholder="Mon–Fri 8am–5pm"></label>
+          <div><b style="display:block;margin-bottom:6px">Hours <span class="hint" style="font-weight:400">("—" = not shown)</span></b><input type="hidden" name="hours" value="${v(d.hours)}"><div data-hours></div></div>
         </div>
         <div class="row2">
           <label>Services <span class="hint">(one per line; add details after a colon, e.g. "Brake repair: same-day service")</span><textarea name="services" rows="4">${v(svc)}</textarea></label>
@@ -647,10 +653,16 @@
         </div>
         <div class="thumbs" data-thumbs></div>`;
     }
-    document.getElementById("add-biz-fields").innerHTML = bizFields({}, true);
+    // Hours dropdowns inside a business form.
+    const mountHours = (form) => form.querySelector("[data-hours]") && HoursPicker.mount(form.querySelector("[data-hours]"), form.elements.hours);
+    const drawAddForm = () => {
+      document.getElementById("add-biz-fields").innerHTML = bizFields({}, true);
+      mountHours(document.getElementById("add-biz-form"));
+    };
+    drawAddForm();
     fetch("/api/plans").then((r) => r.json()).then((out) => {
       BTYPES = out.businessTypes || [];
-      document.getElementById("add-biz-fields").innerHTML = bizFields({}, true);
+      drawAddForm();
     });
     // Kind of business picked: show its questions, and the menu box for food & drink.
     document.addEventListener("change", (e) => {
@@ -792,6 +804,7 @@
       msg.innerHTML = `${esc(added.business)} added${added.channel === "email" ? " to the email queue (it's emailed after the next screenshot run on the Mac)" : " to the call list"}. <a href="/p/${added.slug}?admin=1" target="_blank">See their sample site</a>`;
       msg.className = "msg show ok";
       form.reset();
+      mountHours(form);
       form.querySelector("[data-infomsg]").textContent = "";
       showThumbs(form);
       loadCalls();
@@ -819,6 +832,7 @@
         if (!card.querySelector("form[data-infofor]")) {
           card.insertAdjacentHTML("beforeend", editForm(window._calls[edit.dataset.editinfo]));
           showThumbs(card.querySelector("form[data-infofor]"));
+          mountHours(card.querySelector("form[data-infofor]"));
         }
         card.querySelector("form[data-infofor] input").focus();
         return;
