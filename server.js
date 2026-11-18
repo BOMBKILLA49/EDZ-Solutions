@@ -1765,7 +1765,10 @@ app.post("/api/start-google", async (req, res) => {
   if (rateLimited(`google:${req.ip}`, 10)) return res.status(429).json({ error: "Please wait a bit before trying another link." });
   const b = req.body || {};
   const placeId = await startExtras.placeIdFromLink(b.url, { business: clean(b.business, 100), address: clean(b.address, 200), area: clean(b.area, 160) });
-  if (!placeId) return res.status(404).json({ error: "We couldn't find that Google listing. Copy the link from the Share button on your Google Maps listing." });
+  if (!placeId) {
+    const missing = !clean(b.business, 100) ? "your business name" : !clean(b.address, 200) && !clean(b.area, 160) ? "your town (Area you serve) or address" : "";
+    return res.status(404).json({ error: missing ? `We couldn't find that listing from the link alone. Fill in ${missing} above, then paste the link again.` : "We couldn't find that Google listing. Copy the link from the Share button on your Google Maps listing." });
+  }
   const google = await googlePlaces.placeContent(pool, placeId, clean(b.business, 100), { trusted: true });
   if (!google) return res.status(502).json({ error: "Google didn't send your reviews just now. We'll still add them when we build your site." });
   res.json({ placeId, google });
