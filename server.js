@@ -1337,10 +1337,12 @@ function prospectFromLead(lead) {
   // A Facebook page alone is enough for the call list (you message them there by hand).
   const fbKey = data.facebookUrl ? facebookKey(data.facebookUrl) : null;
   if (!hasEmail && phoneKey.length !== 10 && !fbKey) return { error: "no email, no 10-digit phone and no Facebook page" };
-  if (!hasEmail && domain) return { error: "has a website but no email (skip it)" };
+  // A weak site (blank Square page, outdated site) with no email still goes on the call list
+  // when there's a phone; its call script and messages say "new homepage", not "no website".
+  if (!hasEmail && domain && phoneKey.length !== 10) return { error: "has a website but no email or phone" };
   const slug = `${slugify(`${data.business} ${data.city}`)}-${crypto.randomBytes(2).toString("hex")}`;
   // phone_key dedupes businesses without a website: by phone, or by Facebook page when there's no phone.
-  const dedupeKey = domain ? null : phoneKey.length === 10 ? phoneKey : fbKey;
+  const dedupeKey = phoneKey.length === 10 ? phoneKey : domain ? null : fbKey;
   return { slug, email: hasEmail ? email : null, domain, data, channel: hasEmail ? "email" : "call", phoneKey: dedupeKey };
 }
 
