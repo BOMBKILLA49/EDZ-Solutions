@@ -1316,6 +1316,10 @@ function prospectFromLead(lead) {
       .slice(0, 9),
     website: clean(l.website, 200),
     logoUrl: safeUrl(l.logoUrl),
+    // Header banner chosen in Edit info (empty = AI trade photo); heroSeparate means their
+    // photos are for About/"Take a look", not the header.
+    heroUrl: safeUrl(l.heroUrl),
+    heroSeparate: l.heroSeparate === true || l.heroSeparate === "1" || undefined,
     // Photos with what each one shows (labels line up with the links).
     ...(() => {
       const pairs = (Array.isArray(l.photoUrls) ? l.photoUrls : [])
@@ -1507,11 +1511,11 @@ app.post("/api/admin/prospects/:id/info", requireAdmin, async (req, res) => {
   if (!rows[0]) return res.status(404).json({ error: "No such business." });
   if (rows[0].channel !== "call") return res.status(400).json({ error: "Only call-list businesses can be edited here." });
   const old = rows[0].data || {};
-  const fields = ["business", "contactName", "industry", "city", "state", "area", "phone", "email", "address", "hours", "tagline", "about", "services", "facebookUrl", "yelpUrl", "googleMapsUrl", "logoUrl", "photoUrls", "photoLabels", "type", "extras", "menu"];
+  const fields = ["business", "contactName", "industry", "city", "state", "area", "phone", "email", "address", "hours", "tagline", "about", "services", "facebookUrl", "yelpUrl", "googleMapsUrl", "logoUrl", "heroUrl", "heroSeparate", "photoUrls", "photoLabels", "type", "extras", "menu"];
   const input = Object.fromEntries(fields.filter((k) => k in req.body).map((k) => [k, req.body[k]]));
   const p = prospectFromLead({ ...old, ...input });
   if (p.error) return res.status(400).json({ error: `Couldn't save: ${p.error}.` });
-  for (const [k, v, label] of [["facebookUrl", input.facebookUrl, "Facebook"], ["yelpUrl", input.yelpUrl, "Yelp"], ["googleMapsUrl", input.googleMapsUrl, "Google listing"], ["logoUrl", input.logoUrl, "logo"]]) {
+  for (const [k, v, label] of [["facebookUrl", input.facebookUrl, "Facebook"], ["yelpUrl", input.yelpUrl, "Yelp"], ["googleMapsUrl", input.googleMapsUrl, "Google listing"], ["logoUrl", input.logoUrl, "logo"], ["heroUrl", input.heroUrl, "header banner"]]) {
     if (v && !p.data[k]) return res.status(400).json({ error: `That ${label} link doesn't look right.` });
   }
   // The email here is shown on their site; "Found their email" is what moves them to the email queue.
@@ -1577,7 +1581,7 @@ app.post("/api/admin/menu-read", requireAdmin, async (req, res) => {
 
 // Links images uploaded before the business existed (their /pimg/ ids are in its logo/photo links).
 function claimImages(prospectId, data) {
-  const ids = [data.logoUrl, ...(data.photoUrls || [])].map((u) => /\/pimg\/([0-9a-f-]{36})\./i.exec(u || "")?.[1]).filter(Boolean);
+  const ids = [data.logoUrl, data.heroUrl, ...(data.photoUrls || [])].map((u) => /\/pimg\/([0-9a-f-]{36})\./i.exec(u || "")?.[1]).filter(Boolean);
   if (!ids.length) return Promise.resolve();
   return pool.query("UPDATE prospect_images SET prospect_id=$1 WHERE id = ANY($2::uuid[]) AND prospect_id IS NULL", [prospectId, ids]).catch((e) => console.error("claim images failed:", e));
 }
@@ -1677,7 +1681,8 @@ app.get("/p/:slug", async (req, res) => {
   }
   // No photos of their own: use the trade's stock photo (made in the background if it's new).
   let heroImage = "";
-  if (!(rows[0].data.photoUrls || []).length && !googleInfo?.photos.length) {
+  const pd = rows[0].data;
+  if (pd.heroSeparate ? !pd.heroUrl : !(pd.photoUrls || []).length && !googleInfo?.photos.length) {
     const key = await tradeImages.hasTradeImage(pool, rows[0].data.industry);
     if (key) heroImage = `/trade-img/${key}.jpg`;
     else tradeImages.ensureTradeImage(pool, openai, IMAGE_MODEL, rows[0].data.industry);
@@ -1698,7 +1703,8 @@ app.post("/api/admin/prospects/:id/prepare", requireAdmin, async (req, res) => {
   const { rows } = await pool.query("SELECT data FROM prospects WHERE id=$1", [req.params.id]).catch(() => ({ rows: [] }));
   const d = rows[0]?.data;
   if (!d) return res.status(404).json({ error: "No such prospect." });
-  const key = (d.photoUrls || []).length ? null : await tradeImages.ensureTradeImage(pool, openai, IMAGE_MODEL, d.industry);
+  const needTrade = d.heroSeparate ? !d.heroUrl : !(d.photoUrls || []).length;
+  const key = needTrade ? await tradeImages.ensureTradeImage(pool, openai, IMAGE_MODEL, d.industry) : null;
   res.json({ tradeImage: key });
 });
 
@@ -1888,7 +1894,7 @@ app.post("/api/preview-draft", async (req, res) => {
   }
   const google = startExtras.cleanGoogle(b.google);
   let heroImage = "";
-  if (!(d.photoUrls || []).length && !google?.photos.length) {
+  if (d.heroSeparate ? !d.heroUrl : !(d.photoUrls || []).length && !google?.photos.length) {
     const key = await tradeImages.hasTradeImage(pool, d.industry);
     if (key) heroImage = `/trade-img/${key}.jpg`;
     else if (d.industry) tradeImages.ensureTradeImage(pool, openai, IMAGE_MODEL, d.industry);
