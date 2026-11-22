@@ -71,6 +71,8 @@
     .fb-read.warn { color: #b45309; }
     .fb-read.ok { color: var(--ok); font-weight: 700; }
     .fb-sent { margin-top: 6px; font-size: .88rem; font-weight: 700; color: #1d4ed8; }
+    .fb-sent .via { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: .75rem; color: #fff; background: #1877f2; margin-right: 4px; }
+    .fb-sent .via.text { background: #16a34a; }
     .call-card { position: relative; }
     .call-card .remove-x { position: absolute; top: 14px; right: 14px; font: inherit; font-size: .85rem; font-weight: 700; padding: 6px 12px; border-radius: 9px; border: 1px solid #fecaca; background: #fef2f2; color: var(--err); cursor: pointer; }
     .call-card .remove-x:hover { background: #fee2e2; }
@@ -418,7 +420,7 @@
       loadProjects();
     });
 
-    const OSTATUS = { new: "Needs screenshot", ready: "Ready", sending: "Sending", sent: "Sent", replied: "Replied", won: "Won", unsubscribed: "Unsubscribed", bounced: "Bounced", skipped: "Skipped", call: "Call list", no_answer: "No answer", messaged: "Messaged on Facebook", interested: "Interested", not_interested: "Not interested" };
+    const OSTATUS = { new: "Needs screenshot", ready: "Ready", sending: "Sending", sent: "Sent", replied: "Replied", won: "Won", unsubscribed: "Unsubscribed", bounced: "Bounced", skipped: "Skipped", call: "Call list", no_answer: "No answer", messaged: "Messaged", interested: "Interested", not_interested: "Not interested" };
     const OPILL = { ready: "paid", sent: "engraved", replied: "live", won: "shipped" };
     let ofilter = "";
     async function loadOutreach() {
@@ -568,7 +570,12 @@
       const d = p.data || {};
       return `Hi again! Just checking in on the free website I made for ${d.business}. If you'd like it, I'll waive the $99 setup fee and give you the first month free. Want me to send you the link?`;
     }
-    const FB_TEXT = { fb: fbText, fbsample: fbSampleText, fbsignup: fbSignupText, fbfu: fbFollowupText };
+    // Follow-up for someone who got the text message (which already had the link).
+    function textFollowupText(p) {
+      const d = p.data || {};
+      return `Hi, it's Ty from EDZ Solutions again. Just checking in on the website I made for ${String(d.business || "your business").replace(/\.+$/, "")}: ${location.origin}/p/${p.slug}?utm_source=text\n\nIf you'd like it, I'll waive the $99 setup fee and give you the first month free. Want to change anything? Just text me back.`;
+    }
+    const FB_TEXT = { fb: fbText, fbsample: fbSampleText, fbsignup: fbSignupText, fbfu: fbFollowupText, textfu: textFollowupText };
     async function loadCalls() {
       const all = await Promise.all(Object.keys(CSTATUS).map(async (k) => [k, (await (await fetch(`/api/admin/prospects?status=${k}`)).json()).prospects.filter((p) => p.channel === "call")]));
       const by = Object.fromEntries(all);
@@ -589,7 +596,7 @@
                 ${d.hours ? `<div class="meta">${esc(d.hours.split("\n").slice(0, 2).join(" · "))}</div>` : ""}
                 ${p.notes ? `<div class="meta">${esc(p.notes)}</div>` : ""}
                 ${d.fbRead === "pending" ? `<div class="fb-read">Facebook page added: Grok Bot will read it on its next run and fill in what it shows.</div>` : d.fbRead === "blocked" ? `<div class="fb-read warn">Grok Bot couldn't read their Facebook page (login screen). Open it yourself and use Edit info to add what you see.</div>` : d.fbRead === "done" ? `<div class="fb-read ok">&#10003; Filled in from their Facebook page.</div>` : ""}
-                ${p.fb_messaged_at ? `<div class="fb-sent">&#10003; Facebook message sent ${esc(when(p.fb_messaged_at))} (${daysAgo(p.fb_messaged_at)})${p.fb_followup_at ? ` · follow-up sent ${esc(when(p.fb_followup_at))} (${daysAgo(p.fb_followup_at)})` : ""}</div>` : ""}
+                ${p.fb_messaged_at ? `<div class="fb-sent"><span class="via ${p.messaged_via === "text" ? "text" : "fb"}">${p.messaged_via === "text" ? "Text" : "Facebook"}</span> &#10003; ${p.messaged_via === "text" ? "Text message" : "Facebook message"} sent ${esc(when(p.fb_messaged_at))} (${daysAgo(p.fb_messaged_at)})${p.fb_followup_at ? ` · follow-up sent ${esc(when(p.fb_followup_at))} (${daysAgo(p.fb_followup_at)})` : ""}</div>` : ""}
                 ${d.phone ? `<div class="script">"Hi, is this the owner of ${esc(d.business)}? I'm Ty with EDZ Solutions. ${d.website ? "I came across your website and put together a new homepage for you" : "I noticed you don't have a website, so I built one for you"}, free to look at. Can I text you the link?"</div>` : ""}
               </div>
               <div class="acts">
@@ -603,11 +610,11 @@
                 <button data-copy="${p.id}" data-kind="fbsignup" title="Once they're interested: where they add their info and check out">Copy sign-up link</button>
                 ${d.phone ? `<button data-copy="${p.id}" data-kind="text">Copy text message</button>` : ""}
                 ${["call", "no_answer"].includes(p.status) ? `<button data-addemail="${p.id}">Found their email</button>` : ""}
-                ${["call", "no_answer"].includes(p.status) ? `<button class="go" data-cid="${p.id}" data-cst="messaged" title="After you paste the Facebook message and send it">Sent Facebook message</button>${d.phone ? `<a class="go" href="${smsHref(d.phone, linkText(p))}" data-cid="${p.id}" data-cst="interested">Said yes: text link</a>` : ""}
+                ${["call", "no_answer"].includes(p.status) ? `<button class="go" data-cid="${p.id}" data-cst="messaged" title="After you paste the Facebook message and send it">Sent Facebook message</button>${d.phone ? `<button class="go" data-cid="${p.id}" data-cst="messaged" data-via="text" title="After you paste the text message and send it">Sent text message</button>` : ""}${d.phone ? `<a class="go" href="${smsHref(d.phone, linkText(p))}" data-cid="${p.id}" data-cst="interested">Said yes: text link</a>` : ""}
                   <button data-cid="${p.id}" data-cst="no_answer">No answer</button>
                   <button data-cid="${p.id}" data-cst="not_interested">Not interested</button>
                   <button data-cid="${p.id}" data-cst="won" title="Signed up (on the phone or any other way)">Won</button>` : ""}
-                ${p.status === "messaged" ? `<button data-copy="${p.id}" data-kind="fbfu">Copy follow-up message</button>
+                ${p.status === "messaged" ? `<button data-copy="${p.id}" data-kind="${p.messaged_via === "text" ? "textfu" : "fbfu"}">Copy follow-up ${p.messaged_via === "text" ? "text" : "message"}</button>
                   ${p.fb_followup_at ? "" : `<button class="go" data-fbfu="${p.id}">Sent follow-up</button>`}
                   ${d.phone ? `<a href="${smsHref(d.phone, linkText(p))}" data-cid="${p.id}" data-cst="interested">Said yes: text link</a>` : ""}
                   <button data-cid="${p.id}" data-cst="interested" title="They replied and want to hear more">Interested</button>
@@ -876,7 +883,7 @@
       if (copy) {
         const p = window._calls[copy.dataset.copy];
         await navigator.clipboard.writeText((FB_TEXT[copy.dataset.kind] || linkText)(p));
-        copy.textContent = copy.dataset.kind === "text" ? "Copied! Paste it in a text" : "Copied! Paste it in Messenger";
+        copy.textContent = ["text", "textfu"].includes(copy.dataset.kind) ? "Copied! Paste it in a text" : "Copied! Paste it in Messenger";
         return;
       }
       const edit = e.target.closest("button[data-editinfo]");
@@ -909,7 +916,7 @@
       fetch(`/api/admin/prospects/${b.dataset.cid}/status`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: b.dataset.cst, notes: note }),
+        body: JSON.stringify({ status: b.dataset.cst, notes: note, via: b.dataset.via }),
       }).then(loadCalls);
     });
 

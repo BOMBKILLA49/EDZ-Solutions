@@ -1428,7 +1428,7 @@ app.get("/api/admin/prospects", requireAdmin, async (req, res) => {
   const only = req.query.view === "outreach" ? "(channel='email' OR status IN ('skipped', 'won'))" : "TRUE";
   const where = `${status ? "WHERE status=$1" : "WHERE status NOT IN ('skipped', 'bounced', 'unsubscribed')"} AND ${only}`;
   const { rows } = await pool.query(
-    `SELECT id, created_at, slug, email, domain, status, prev_status, followup_at, fb_messaged_at, fb_followup_at, channel, data, sent_at, sent_from, views, last_view_at, notes, shot IS NOT NULL AS has_shot
+    `SELECT id, created_at, slug, email, domain, status, prev_status, followup_at, fb_messaged_at, fb_followup_at, messaged_via, channel, data, sent_at, sent_from, views, last_view_at, notes, shot IS NOT NULL AS has_shot
      FROM prospects ${where} ORDER BY COALESCE(sent_at, created_at) DESC LIMIT ${limit} OFFSET ${offset}`,
     status ? [status] : []
   );
@@ -1480,11 +1480,14 @@ app.post("/api/admin/prospects/:id/status", requireAdmin, async (req, res) => {
   const status = String(req.body.status || "");
   if (!PROSPECT_STATUSES.includes(status) || status === "sending") return res.status(400).json({ error: "Bad status" });
   // Unsubscribed is final (they asked us to stop), so it can't be changed here.
+  // "Messaged" records how: a Facebook message or a text.
+  const via = status === "messaged" ? (req.body.via === "text" ? "text" : "facebook") : null;
   await pool.query(
     `UPDATE prospects SET prev_status=status, status=$2, notes=COALESCE($3, notes),
-       fb_messaged_at = CASE WHEN $2 = 'messaged' THEN now() ELSE fb_messaged_at END
+       fb_messaged_at = CASE WHEN $2 = 'messaged' THEN now() ELSE fb_messaged_at END,
+       messaged_via = COALESCE($4, messaged_via)
      WHERE id=$1 AND status <> 'unsubscribed' AND status <> $2`,
-    [req.params.id, status, req.body.notes ?? null]
+    [req.params.id, status, req.body.notes ?? null, via]
   );
   res.json({ ok: true });
 });
@@ -1642,7 +1645,7 @@ app.post("/api/admin/prospects/delete", requireAdmin, async (req, res) => {
   }
 });
 
-// Ty sent the Facebook follow-up message (call list "Messaged" tab).
+// Ty sent the follow-up message, by Facebook or text (call list "Messaged" tab).
 app.post("/api/admin/prospects/:id/fb-followup", requireAdmin, async (req, res) => {
   await pool.query("UPDATE prospects SET fb_followup_at=now() WHERE id=$1", [req.params.id]);
   res.json({ ok: true });
