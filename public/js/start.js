@@ -15,6 +15,16 @@
   const wanted = params.get("plan");
   // Arriving from the sample homepage we emailed: fill in what we already know.
   const previewSlug = params.get("preview");
+  let waiverCents = 0;
+  if (previewSlug) {
+    fetch(`/api/setup-waiver/${encodeURIComponent(previewSlug)}`)
+      .then((r) => r.json())
+      .then((o) => {
+        waiverCents = o.waiverCents || 0;
+        if (waiverCents) showPlan();
+      })
+      .catch(() => {});
+  }
   if (previewSlug) {
     fetch(`/api/preview-info/${encodeURIComponent(previewSlug)}`)
       .then((r) => (r.ok ? r.json() : null))
@@ -53,7 +63,9 @@
 
   function showPlan() {
     const p = plans.find((x) => x.id === $("#plan").value);
-    $("#plan-price").innerHTML = `${money(p.monthlyCents)}<small>/mo + ${money(p.setupCents)} setup</small>`;
+    // Setup waiver (the Facebook offer): checked by the server again at checkout.
+    const setup = Math.max(0, p.setupCents - waiverCents);
+    $("#plan-price").innerHTML = `${money(p.monthlyCents)}<small>/mo + ${waiverCents ? `<s>${money(p.setupCents)}</s> ${setup ? money(setup) : "no"}` : money(p.setupCents)} setup</small>`;
     $("#plan-delivery").textContent = p.delivery;
     // Every feature from every plan; what this plan doesn't include is crossed out.
     $("#plan-features").innerHTML = compare
@@ -65,7 +77,7 @@
           : `<li class="yes">${withValue(typeof v === "string" ? v : row.label, p)}</li>`;
       })
       .join("");
-    $("#due-today").textContent = money(p.setupCents);
+    $("#due-today").textContent = waiverCents ? (setup ? `${money(setup)} ($${waiverCents / 100} off)` : "$0, setup waived") : money(p.setupCents);
     $("#monthly-start").textContent = `${money(p.monthlyCents)}/mo starts in ${p.trialDays} days, around when your site goes live.`;
     history.replaceState(null, "", `?plan=${p.id}${previewSlug ? `&preview=${encodeURIComponent(previewSlug)}` : ""}`);
   }

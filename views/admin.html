@@ -549,15 +549,26 @@
       const d = p.data || {};
       return `Hi again! Just following up on the ${d.website ? "new homepage" : "website"} I made for ${d.business}:\n\n${location.origin}/p/${p.slug}?utm_source=facebook\n\nIf you'd like it live, I can have it up in about 3 days ($99 setup + $19/month, cancel anytime). You can add your logo, phone and anything else here: ${location.origin}/start?plan=launch&preview=${p.slug}&utm_source=facebook\n\nAny questions, just message me back!`;
     }
+    // Ty's Facebook message (2026-11-22). Only the opening changes with their situation:
+    // a Square site, another website, or none. The $99 waiver is applied at checkout for
+    // businesses marked "Sent Facebook message".
     function fbText(p) {
       const d = p.data || {};
-      const where = d.yelpUrl && !d.facebookUrl ? "on Yelp" : d.facebookUrl ? "on Facebook" : "online";
-      const intro = d.website
-        ? `I came across ${d.business}'s website and put together a new homepage for you`
-        : `I came across ${d.business} ${where} and noticed you don't have a website yet, so I made one for you using the info from your page`;
-      const gaps = gapsFor(d);
-      const add = gaps.length ? `I couldn't find your ${listOr(gaps)} online, so I kept it simple. Add them here and I'll put them on your site:` : "If you like it, you can get started here:";
-      return `Hi! I'm Ty with EDZ Solutions. ${intro}. It's free to look at:\n\n${location.origin}/p/${p.slug}?utm_source=facebook\n\n${add} ${location.origin}/start?plan=launch&preview=${p.slug}&utm_source=facebook\n\nIt can be live in about 3 days. It's $99 to set up and $19/month, and you can cancel anytime. Want to change anything? Just message me back.`;
+      const url = `${location.origin}/p/${p.slug}?utm_source=facebook`;
+      const start = `${location.origin}/start?plan=launch&preview=${p.slug}&utm_source=facebook`;
+      const square = /square\.site|squareup\.com/i.test(d.website || "");
+      const opening = square
+        ? "noticed I can help you with your website. I noticed you use Square for your site now. We can still use Square and add a shop button, but it would be nice for your business to have its own site, so I made one for you using the info I found."
+        : d.website
+          ? "noticed I can help you with your website, so I made a new one for you using the info I found."
+          : "noticed I can help you with a website, so I made one for you using the info I found.";
+      return `Hi! I'm Ty with EDZ Solutions. I came across ${d.business} online and ${opening} It's free to look at:
+
+${url}
+
+I kept it simple. You can add more photos here and I'll put them on your site: ${start}
+
+It can be live in about 3 days. It's usually $99 to set up and $19/month, and you can cancel anytime. If you're interested, I can waive the $99 fee and just make it $19/mo. And if you want to change anything, just message me back & we can make your site exactly the way you want it.`;
     }
     async function loadCalls() {
       const all = await Promise.all(Object.keys(CSTATUS).map(async (k) => [k, (await (await fetch(`/api/admin/prospects?status=${k}`)).json()).prospects.filter((p) => p.channel === "call")]));

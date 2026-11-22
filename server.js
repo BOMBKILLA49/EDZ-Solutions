@@ -770,6 +770,12 @@ app.post("/api/plan-checkout", async (req, res) => {
     logo = { mime: m[1], name: clean(b.logo.name, 120), data: Buffer.from(m[3], "base64") };
   }
 
+  // Businesses Ty messaged on Facebook were offered "no $99 setup fee": $99 off setup
+  // (all of it on Launch). Checked against the prospect, so a link can't be edited for it.
+  const waiverCents = await setupWaiverFor(data.previewSlug);
+  const setupCents = Math.max(0, plan.setupCents - waiverCents);
+  data.setupWaivedCents = plan.setupCents - setupCents;
+
   const id = crypto.randomUUID();
   try {
     // Setup fee is charged now; the monthly plan starts after the trial (about the delivery time).
@@ -785,14 +791,16 @@ app.post("/api/plan-checkout", async (req, res) => {
             product_data: { name: `${plan.name} website plan — monthly` },
           },
         },
-        {
-          quantity: 1,
-          price_data: {
-            currency: "usd",
-            unit_amount: plan.setupCents,
-            product_data: { name: `${plan.name} website setup (one time)` },
-          },
-        },
+        ...(setupCents > 0
+          ? [{
+              quantity: 1,
+              price_data: {
+                currency: "usd",
+                unit_amount: setupCents,
+                product_data: { name: `${plan.name} website setup (one time)${data.setupWaivedCents ? ` — $${data.setupWaivedCents / 100} off` : ""}` },
+              },
+            }]
+          : []),
       ],
       subscription_data: {
         trial_period_days: plan.trialDays,
@@ -805,7 +813,9 @@ app.post("/api/plan-checkout", async (req, res) => {
       metadata: { kind: "website", project_id: id, plan: plan.id },
       custom_text: {
         shipping_address: { message: `Where should we ship your ${plan.cards} free metal business cards?` },
-        submit: { message: `You pay the ${(plan.setupCents / 100).toFixed(0)} dollar setup today. The monthly plan starts in ${plan.trialDays} days, around when your site goes live. Cancel anytime.` },
+        submit: { message: setupCents > 0
+          ? `You pay the ${(setupCents / 100).toFixed(0)} dollar setup today. The monthly plan starts in ${plan.trialDays} days, around when your site goes live. Cancel anytime.`
+          : `Your setup fee is waived, so nothing is charged today. The monthly plan starts in ${plan.trialDays} days, around when your site goes live. Cancel anytime.` },
       },
       success_url: `${SITE_URL}/project-started?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${SITE_URL}/start?plan=${plan.id}`,
@@ -822,6 +832,14 @@ app.post("/api/plan-checkout", async (req, res) => {
     res.status(500).json({ error: "Checkout couldn't start. Please try again." });
   }
 });
+
+// $99 off website setup for businesses Ty messaged on Facebook (the offer in that message).
+const SETUP_WAIVER_CENTS = 9900;
+async function setupWaiverFor(slug) {
+  if (!/^[a-z0-9-]{3,90}$/.test(slug || "")) return 0;
+  const { rows } = await pool.query("SELECT fb_messaged_at FROM prospects WHERE slug=$1", [slug]).catch(() => ({ rows: [] }));
+  return rows[0]?.fb_messaged_at ? SETUP_WAIVER_CENTS : 0;
+}
 
 // Marks a website project paid exactly once, then emails the project details.
 async function markProjectPaid(sessionId) {
@@ -848,7 +866,7 @@ async function sendProjectAlert(p) {
   const plan = plans.planById(p.plan);
   const d = p.data || {};
   const lines = [
-    `NEW WEBSITE PROJECT — ${plan.name} ($${(plan.setupCents / 100).toFixed(2)} setup paid, $${(plan.monthlyCents / 100).toFixed(2)}/mo starts in ${plan.trialDays} days)`,
+    `NEW WEBSITE PROJECT — ${plan.name} ($${((plan.setupCents - (d.setupWaivedCents || 0)) / 100).toFixed(2)} setup paid${d.setupWaivedCents ? `, $${d.setupWaivedCents / 100} waived from your Facebook offer` : ""}, $${(plan.monthlyCents / 100).toFixed(2)}/mo starts in ${plan.trialDays} days)`,
     `Deliver by: ${plan.delivery.replace(/^Live in /, "")}`,
     plan.cards ? `Includes: ${plan.cards} free metal business cards, shipped to: ${d.shipTo ? [d.shipTo.name, d.shipTo.line1, d.shipTo.line2, `${d.shipTo.city}, ${d.shipTo.state} ${d.shipTo.postal_code}`].filter(Boolean).join(", ") : "(no address given; ask them)"}` : null,
     ``,
@@ -1888,6 +1906,10 @@ app.post("/api/preview-draft", async (req, res) => {
 });
 
 // Prefills /start when someone claims their sample homepage.
+app.get("/api/setup-waiver/:slug", async (req, res) => {
+  res.json({ waiverCents: await setupWaiverFor(req.params.slug) });
+});
+
 app.get("/api/preview-info/:slug", async (req, res) => {
   const { rows } = await pool.query("SELECT data FROM prospects WHERE slug=$1", [req.params.slug]).catch(() => ({ rows: [] }));
   if (!rows[0]) return res.status(404).json({ error: "Not found" });
