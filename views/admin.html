@@ -551,8 +551,9 @@
     // once they're interested. The $99 setup waiver applies when they're marked "Sent Facebook message".
     function fbText(p) {
       const d = p.data || {};
-      // Ty's exact wording (no business name), the same for every business.
-      return "Hi! I'm Ty with EDZ Solutions. I put together a free website for you using the info I found. Want me to send you the link to take a look?";
+      // Ty's wording, plus their business name (feels personal, and no two messages are
+      // identical, which Facebook's spam filter likes better) and "no strings attached".
+      return `Hi! I'm Ty with EDZ Solutions. I put together a free website for ${d.business ? d.business : "you"}, no strings attached. Want me to send you the link to take a look?`;
     }
     function fbSampleText(p) {
       return `Here it is: ${location.origin}/p/${p.slug}?utm_source=facebook\n\nI kept it simple, and I can change anything you'd like. If you want it live, it's just $19/month and I'll waive the $99 setup fee.`;
