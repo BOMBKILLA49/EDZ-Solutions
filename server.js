@@ -774,6 +774,9 @@ app.post("/api/plan-checkout", async (req, res) => {
   // (all of it on Launch). Checked against the prospect, so a link can't be edited for it.
   const waiverCents = await setupWaiverFor(data.previewSlug);
   const setupCents = Math.max(0, plan.setupCents - waiverCents);
+  // First month free: the monthly plan starts 30 days later than usual.
+  const freeDays = waiverCents ? FREE_MONTH_DAYS : 0;
+  data.freeMonth = Boolean(freeDays);
   data.setupWaivedCents = plan.setupCents - setupCents;
 
   const id = crypto.randomUUID();
@@ -803,7 +806,7 @@ app.post("/api/plan-checkout", async (req, res) => {
           : []),
       ],
       subscription_data: {
-        trial_period_days: plan.trialDays,
+        trial_period_days: plan.trialDays + freeDays,
         description: `${plan.name} website plan for ${data.business}`,
         metadata: { project_id: id, plan: plan.id },
       },
@@ -815,7 +818,7 @@ app.post("/api/plan-checkout", async (req, res) => {
         shipping_address: { message: `Where should we ship your ${plan.cards} free metal business cards?` },
         submit: { message: setupCents > 0
           ? `You pay the ${(setupCents / 100).toFixed(0)} dollar setup today. The monthly plan starts in ${plan.trialDays} days, around when your site goes live. Cancel anytime.`
-          : `Your setup fee is waived, so nothing is charged today. The monthly plan starts in ${plan.trialDays} days, around when your site goes live. Cancel anytime.` },
+          : `Your setup fee is waived, so nothing is charged today.${freeDays ? ` Your first month is free too, so the monthly plan starts in ${plan.trialDays + freeDays} days.` : ` The monthly plan starts in ${plan.trialDays} days, around when your site goes live.`} Cancel anytime.` },
       },
       success_url: `${SITE_URL}/project-started?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${SITE_URL}/start?plan=${plan.id}`,
@@ -834,11 +837,14 @@ app.post("/api/plan-checkout", async (req, res) => {
 });
 
 // $99 off website setup for businesses Ty messaged on Facebook (the offer in that message).
+// Outreach offer (every message we send): $99 off setup and the first month free, for any
+// business we contacted that signs up through its sample-site link.
 const SETUP_WAIVER_CENTS = 9900;
+const FREE_MONTH_DAYS = 30;
 async function setupWaiverFor(slug) {
   if (!/^[a-z0-9-]{3,90}$/.test(slug || "")) return 0;
   const { rows } = await pool.query("SELECT fb_messaged_at FROM prospects WHERE slug=$1", [slug]).catch(() => ({ rows: [] }));
-  return rows[0]?.fb_messaged_at ? SETUP_WAIVER_CENTS : 0;
+  return rows[0] ? SETUP_WAIVER_CENTS : 0;
 }
 
 // Marks a website project paid exactly once, then emails the project details.
@@ -866,7 +872,7 @@ async function sendProjectAlert(p) {
   const plan = plans.planById(p.plan);
   const d = p.data || {};
   const lines = [
-    `NEW WEBSITE PROJECT — ${plan.name} ($${((plan.setupCents - (d.setupWaivedCents || 0)) / 100).toFixed(2)} setup paid${d.setupWaivedCents ? `, $${d.setupWaivedCents / 100} waived from your Facebook offer` : ""}, $${(plan.monthlyCents / 100).toFixed(2)}/mo starts in ${plan.trialDays} days)`,
+    `NEW WEBSITE PROJECT — ${plan.name} ($${((plan.setupCents - (d.setupWaivedCents || 0)) / 100).toFixed(2)} setup paid${d.setupWaivedCents ? `, $${d.setupWaivedCents / 100} waived (outreach offer)` : ""}, $${(plan.monthlyCents / 100).toFixed(2)}/mo starts in ${plan.trialDays + (d.freeMonth ? 30 : 0)} days${d.freeMonth ? ", first month free" : ""})`,
     `Deliver by: ${plan.delivery.replace(/^Live in /, "")}`,
     plan.cards ? `Includes: ${plan.cards} free metal business cards, shipped to: ${d.shipTo ? [d.shipTo.name, d.shipTo.line1, d.shipTo.line2, `${d.shipTo.city}, ${d.shipTo.state} ${d.shipTo.postal_code}`].filter(Boolean).join(", ") : "(no address given; ask them)"}` : null,
     ``,
@@ -1913,7 +1919,8 @@ app.post("/api/preview-draft", async (req, res) => {
 
 // Prefills /start when someone claims their sample homepage.
 app.get("/api/setup-waiver/:slug", async (req, res) => {
-  res.json({ waiverCents: await setupWaiverFor(req.params.slug) });
+  const waiverCents = await setupWaiverFor(req.params.slug);
+  res.json({ waiverCents, freeDays: waiverCents ? FREE_MONTH_DAYS : 0 });
 });
 
 app.get("/api/preview-info/:slug", async (req, res) => {

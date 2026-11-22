@@ -16,11 +16,13 @@
   // Arriving from the sample homepage we emailed: fill in what we already know.
   const previewSlug = params.get("preview");
   let waiverCents = 0;
+  let freeDays = 0;
   if (previewSlug) {
     fetch(`/api/setup-waiver/${encodeURIComponent(previewSlug)}`)
       .then((r) => r.json())
       .then((o) => {
         waiverCents = o.waiverCents || 0;
+        freeDays = o.freeDays || 0;
         if (waiverCents) showPlan();
       })
       .catch(() => {});
@@ -78,7 +80,9 @@
       })
       .join("");
     $("#due-today").textContent = waiverCents ? (setup ? `${money(setup)} ($${waiverCents / 100} off)` : "$0, setup waived") : money(p.setupCents);
-    $("#monthly-start").textContent = `${money(p.monthlyCents)}/mo starts in ${p.trialDays} days, around when your site goes live.`;
+    $("#monthly-start").textContent = freeDays
+      ? `Your first month is free: ${money(p.monthlyCents)}/mo starts in ${p.trialDays + freeDays} days. Cancel anytime.`
+      : `${money(p.monthlyCents)}/mo starts in ${p.trialDays} days, around when your site goes live.`;
     history.replaceState(null, "", `?plan=${p.id}${previewSlug ? `&preview=${encodeURIComponent(previewSlug)}` : ""}`);
   }
   $("#plan").addEventListener("change", showPlan);
