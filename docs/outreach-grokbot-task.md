@@ -97,6 +97,24 @@ These come with `facebookUrl` and whatever the search result showed (name, trade
 - **Contact:** fill in `phone` and `email` if the page shows them (`emailSource`: "your Facebook page"). Keep the business even with **no phone and no email**, since Ty can message them on Facebook from the call list. That's why `facebookUrl` must always be filled in.
 - **Details:** `about`, `services` and `hours` from the page, facts only. Leave `photoUrls` and `logoUrl` empty.
 
+## 2c. Facebook pages Ty added (do this first, every run)
+
+When Ty finds a business's Facebook page himself and adds it, the business waits for you to read it. Run:
+
+```
+cd ~/EDZ-Solutions && node scripts/facebook-fill.js list
+```
+
+For each one, open its `facebookUrl` **as a logged-out visitor, one at a time** (never log in, never message or comment). Write what the page shows to a small JSON file and save it:
+
+```
+node scripts/facebook-fill.js save <id> /tmp/fb-<id>.json
+```
+
+The file can have `email`, `phone`, `about` (a few sentences, facts only), `services` (a list), `hours`, `logoImage` (profile picture link), `bannerImage` (cover photo link) and `photos` (up to 6: `{"url": "...", "label": "what it shows"}`, their own work, storefront or products only). Leave out anything the page doesn't show, and skip `alreadyHas` items. The script copies the images to the site, because Facebook image links expire, and it never overwrites what Ty already entered.
+
+If Facebook shows a login screen, don't work around it. Run `node scripts/facebook-fill.js blocked <id>` and move on. In your report, say how many you filled in and how many were blocked.
+
 ## 3. Save and run
 
 Save them as a JSON array to `~/EDZ-Solutions/leads/YYYY-MM-DD-HHMM.json` (today's date and the time, so runs on the same day don't overwrite each other). See `docs/outreach-lead-example.json` for the exact shape. Then run:

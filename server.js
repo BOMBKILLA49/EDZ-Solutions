@@ -1381,6 +1381,8 @@ app.post("/api/admin/prospects", requireAdmin, async (req, res) => {
   const skipped = [];
   for (const lead of leads.slice(0, 200)) {
     const p = prospectFromLead(lead);
+    // Added by hand with a Facebook page: Grok Bot reads it on its next run.
+    if (!p.error && p.data.facebookUrl && /by hand/i.test(p.data.source || "")) p.data.fbRead = "pending";
     if (p.error) {
       skipped.push({ business: lead?.business || "?", reason: p.error });
       continue;
@@ -1526,6 +1528,10 @@ app.post("/api/admin/prospects/:id/info", requireAdmin, async (req, res) => {
   }
   // The email here is shown on their site; "Found their email" is what moves them to the email queue.
   const data = { ...old, ...p.data, noWebsite: old.noWebsite ?? p.data.noWebsite, emailSource: old.emailSource || p.data.emailSource, source: old.source || p.data.source };
+  // A Facebook page Ty added: Grok Bot reads it (as a visitor) on its next run and fills in
+  // what it shows (scripts/facebook-fill.js). Its own save reports "done" or "blocked".
+  if (["done", "blocked"].includes(req.body.fbRead)) data.fbRead = req.body.fbRead;
+  else if (data.facebookUrl && data.facebookUrl !== old.facebookUrl) data.fbRead = "pending";
   // New name or address: find their Google listing again on the next page view.
   if (["business", "address", "city", "state"].some((k) => (old[k] || "") !== (data[k] || ""))) delete data.placeId;
   try {
@@ -1539,6 +1545,14 @@ app.post("/api/admin/prospects/:id/info", requireAdmin, async (req, res) => {
     throw err;
   }
   res.json({ ok: true });
+});
+
+// Call-list businesses whose Facebook page Ty added and Grok Bot hasn't read yet.
+app.get("/api/admin/facebook-pending", requireAdmin, async (req, res) => {
+  const { rows } = await pool.query(
+    "SELECT id, slug, data FROM prospects WHERE channel='call' AND data->>'fbRead'='pending' AND status NOT IN ('skipped','won','not_interested') ORDER BY created_at LIMIT 50"
+  );
+  res.json({ businesses: rows.map((r) => ({ id: r.id, slug: r.slug, data: r.data })) });
 });
 
 // Upload a logo or photo for a business's sample site ("+ Add a business" or Edit info). Returns

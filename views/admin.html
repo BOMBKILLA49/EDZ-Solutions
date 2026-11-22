@@ -67,6 +67,9 @@
     .call-card .acts { display: flex; gap: 6px; flex-wrap: wrap; }
     .call-card .acts a, .call-card .acts button { font: inherit; font-size: .85rem; font-weight: 700; padding: 8px 12px; border-radius: 9px; border: 1px solid var(--line); background: #fff; color: var(--ink); text-decoration: none; cursor: pointer; white-space: nowrap; }
     .call-card .acts .go { background: var(--accent); border-color: var(--accent); }
+    .fb-read { margin-top: 6px; font-size: .85rem; color: var(--muted); }
+    .fb-read.warn { color: #b45309; }
+    .fb-read.ok { color: var(--ok); font-weight: 700; }
     .fb-sent { margin-top: 6px; font-size: .88rem; font-weight: 700; color: #1d4ed8; }
     .call-card { position: relative; }
     .call-card .remove-x { position: absolute; top: 14px; right: 14px; font: inherit; font-size: .85rem; font-weight: 700; padding: 6px 12px; border-radius: 9px; border: 1px solid #fecaca; background: #fef2f2; color: var(--err); cursor: pointer; }
@@ -585,6 +588,7 @@
                 ${d.phone ? `<a class="phone" href="tel:+1${digits(d.phone)}">${esc(d.phone)}</a>` : `<div class="meta"><strong>No phone or email.</strong> Message them on Facebook.</div>`}
                 ${d.hours ? `<div class="meta">${esc(d.hours.split("\n").slice(0, 2).join(" · "))}</div>` : ""}
                 ${p.notes ? `<div class="meta">${esc(p.notes)}</div>` : ""}
+                ${d.fbRead === "pending" ? `<div class="fb-read">Facebook page added: Grok Bot will read it on its next run and fill in what it shows.</div>` : d.fbRead === "blocked" ? `<div class="fb-read warn">Grok Bot couldn't read their Facebook page (login screen). Open it yourself and use Edit info to add what you see.</div>` : d.fbRead === "done" ? `<div class="fb-read ok">&#10003; Filled in from their Facebook page.</div>` : ""}
                 ${p.fb_messaged_at ? `<div class="fb-sent">&#10003; Facebook message sent ${esc(when(p.fb_messaged_at))} (${daysAgo(p.fb_messaged_at)})${p.fb_followup_at ? ` · follow-up sent ${esc(when(p.fb_followup_at))} (${daysAgo(p.fb_followup_at)})` : ""}</div>` : ""}
                 ${d.phone ? `<div class="script">"Hi, is this the owner of ${esc(d.business)}? I'm Ty with EDZ Solutions. ${d.website ? "I came across your website and put together a new homepage for you" : "I noticed you don't have a website, so I built one for you"}, free to look at. Can I text you the link?"</div>` : ""}
               </div>
