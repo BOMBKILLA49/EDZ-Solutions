@@ -67,6 +67,7 @@
     .call-card .acts { display: flex; gap: 6px; flex-wrap: wrap; }
     .call-card .acts a, .call-card .acts button { font: inherit; font-size: .85rem; font-weight: 700; padding: 8px 12px; border-radius: 9px; border: 1px solid var(--line); background: #fff; color: var(--ink); text-decoration: none; cursor: pointer; white-space: nowrap; }
     .call-card .acts .go { background: var(--accent); border-color: var(--accent); }
+    .fb-sent { margin-top: 6px; font-size: .88rem; font-weight: 700; color: #1d4ed8; }
     .call-card { position: relative; }
     .call-card .remove-x { position: absolute; top: 14px; right: 14px; font: inherit; font-size: .85rem; font-weight: 700; padding: 6px 12px; border-radius: 9px; border: 1px solid #fecaca; background: #fef2f2; color: var(--err); cursor: pointer; }
     .call-card .remove-x:hover { background: #fee2e2; }
@@ -413,7 +414,7 @@
       loadProjects();
     });
 
-    const OSTATUS = { new: "Needs screenshot", ready: "Ready", sending: "Sending", sent: "Sent", replied: "Replied", won: "Won", unsubscribed: "Unsubscribed", bounced: "Bounced", skipped: "Skipped", call: "Call list", no_answer: "No answer", interested: "Interested", not_interested: "Not interested" };
+    const OSTATUS = { new: "Needs screenshot", ready: "Ready", sending: "Sending", sent: "Sent", replied: "Replied", won: "Won", unsubscribed: "Unsubscribed", bounced: "Bounced", skipped: "Skipped", call: "Call list", no_answer: "No answer", messaged: "Messaged on Facebook", interested: "Interested", not_interested: "Not interested" };
     const OPILL = { ready: "paid", sent: "engraved", replied: "live", won: "shipped" };
     let ofilter = "";
     async function loadOutreach() {
@@ -521,7 +522,11 @@
     });
 
     // ---- call list ----
-    const CSTATUS = { call: "To call", no_answer: "No answer", interested: "Interested", not_interested: "Not interested", won: "Won" };
+    const CSTATUS = { call: "To call", no_answer: "No answer", messaged: "Messaged", interested: "Interested", not_interested: "Not interested", won: "Won" };
+    const daysAgo = (t) => {
+      const n = Math.floor((Date.now() - new Date(t)) / 864e5);
+      return n <= 0 ? "today" : n === 1 ? "yesterday" : `${n} days ago`;
+    };
     let cfilter = "call";
     const digits = (p) => String(p || "").replace(/\D/g, "").slice(-10);
     const smsHref = (phone, body) => `sms:+1${digits(phone)}?&body=${encodeURIComponent(body)}`;
@@ -539,6 +544,10 @@
         ? `I couldn't find your ${listOr(gaps)} online, so I kept it simple. You can add them here if you have a logo or images you'd like to add:`
         : "If you like it, you can get started here:";
       return `${hi}, it's Ty from EDZ Solutions. Below is a ${d.website ? "new homepage" : "website"} I made for ${String(d.business || "").replace(/\.+$/, "")}.\n\n${location.origin}/p/${p.slug}?utm_source=text\n\n${add} ${location.origin}/start?plan=launch&preview=${p.slug}&utm_source=text\n\nThe site can be live in about 1-3 days (cancel anytime). Want to change anything? Just text me back.`;
+    }
+    function fbFollowupText(p) {
+      const d = p.data || {};
+      return `Hi again! Just following up on the ${d.website ? "new homepage" : "website"} I made for ${d.business}:\n\n${location.origin}/p/${p.slug}?utm_source=facebook\n\nIf you'd like it live, I can have it up in about 3 days ($99 setup + $19/month, cancel anytime). You can add your logo, phone and anything else here: ${location.origin}/start?plan=launch&preview=${p.slug}&utm_source=facebook\n\nAny questions, just message me back!`;
     }
     function fbText(p) {
       const d = p.data || {};
@@ -569,6 +578,7 @@
                 ${d.phone ? `<a class="phone" href="tel:+1${digits(d.phone)}">${esc(d.phone)}</a>` : `<div class="meta"><strong>No phone or email.</strong> Message them on Facebook.</div>`}
                 ${d.hours ? `<div class="meta">${esc(d.hours.split("\n").slice(0, 2).join(" · "))}</div>` : ""}
                 ${p.notes ? `<div class="meta">${esc(p.notes)}</div>` : ""}
+                ${p.fb_messaged_at ? `<div class="fb-sent">&#10003; Facebook message sent ${esc(when(p.fb_messaged_at))} (${daysAgo(p.fb_messaged_at)})${p.fb_followup_at ? ` · follow-up sent ${esc(when(p.fb_followup_at))} (${daysAgo(p.fb_followup_at)})` : ""}</div>` : ""}
                 ${d.phone ? `<div class="script">"Hi, is this the owner of ${esc(d.business)}? I'm Ty with EDZ Solutions. ${d.website ? "I came across your website and put together a new homepage for you" : "I noticed you don't have a website, so I built one for you"}, free to look at. Can I text you the link?"</div>` : ""}
               </div>
               <div class="acts">
@@ -580,10 +590,16 @@
                 <button data-copy="${p.id}" data-kind="fb">Copy Facebook message</button>
                 ${d.phone ? `<button data-copy="${p.id}" data-kind="text">Copy text message</button>` : ""}
                 ${["call", "no_answer"].includes(p.status) ? `<button data-addemail="${p.id}">Found their email</button>` : ""}
-                ${["call", "no_answer"].includes(p.status) ? `${d.phone ? `<a class="go" href="${smsHref(d.phone, linkText(p))}" data-cid="${p.id}" data-cst="interested">Said yes: text link</a>` : `<button class="go" data-cid="${p.id}" data-cst="interested">Messaged on Facebook</button>`}
+                ${["call", "no_answer"].includes(p.status) ? `<button class="go" data-cid="${p.id}" data-cst="messaged" title="After you paste the Facebook message and send it">Sent Facebook message</button>${d.phone ? `<a class="go" href="${smsHref(d.phone, linkText(p))}" data-cid="${p.id}" data-cst="interested">Said yes: text link</a>` : ""}
                   <button data-cid="${p.id}" data-cst="no_answer">No answer</button>
                   <button data-cid="${p.id}" data-cst="not_interested">Not interested</button>
                   <button data-cid="${p.id}" data-cst="won" title="Signed up (on the phone or any other way)">Won</button>` : ""}
+                ${p.status === "messaged" ? `<button data-copy="${p.id}" data-kind="fbfu">Copy follow-up message</button>
+                  ${p.fb_followup_at ? "" : `<button class="go" data-fbfu="${p.id}">Sent follow-up</button>`}
+                  ${d.phone ? `<a href="${smsHref(d.phone, linkText(p))}" data-cid="${p.id}" data-cst="interested">Said yes: text link</a>` : ""}
+                  <button data-cid="${p.id}" data-cst="interested" title="They replied and want to hear more">Interested</button>
+                  <button data-cid="${p.id}" data-cst="not_interested">Not interested</button>
+                  <button data-cid="${p.id}" data-cst="won">Won</button>` : ""}
                 ${p.status === "interested" ? `${d.phone ? `<a href="${smsHref(d.phone, linkText(p))}">Text link again</a>` : ""}<button data-cid="${p.id}" data-cst="won">Won</button><button data-cid="${p.id}" data-cst="not_interested">Not interested</button>` : ""}
               </div>
             </div>`;
@@ -829,8 +845,8 @@
       const copy = e.target.closest("button[data-copy]");
       if (copy) {
         const p = window._calls[copy.dataset.copy];
-        await navigator.clipboard.writeText(copy.dataset.kind === "fb" ? fbText(p) : linkText(p));
-        copy.textContent = copy.dataset.kind === "fb" ? "Copied! Paste it in Messenger" : "Copied! Paste it in a text";
+        await navigator.clipboard.writeText(copy.dataset.kind === "fb" ? fbText(p) : copy.dataset.kind === "fbfu" ? fbFollowupText(p) : linkText(p));
+        copy.textContent = copy.dataset.kind === "text" ? "Copied! Paste it in a text" : "Copied! Paste it in Messenger";
         return;
       }
       const edit = e.target.closest("button[data-editinfo]");
@@ -845,6 +861,12 @@
         return;
       }
       if (e.target.closest("[data-cancelinfo]")) { e.target.closest("form").remove(); return; }
+      const fu = e.target.closest("button[data-fbfu]");
+      if (fu) {
+        fu.disabled = true;
+        await fetch(`/api/admin/prospects/${fu.dataset.fbfu}/fb-followup`, { method: "POST" });
+        return loadCalls();
+      }
       const addBtn = e.target.closest("button[data-addemail]");
       if (addBtn) {
         addBtn.outerHTML = `<form class="add-email" data-emailfor="${addBtn.dataset.addemail}"><input type="email" required placeholder="their@email.com"><input placeholder="Found on (e.g. their Facebook page)"><button class="go" type="submit">Email them</button></form>`;

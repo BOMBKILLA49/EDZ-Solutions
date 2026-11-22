@@ -1239,7 +1239,7 @@ app.post("/api/admin/projects/:id/status", requireAdmin, async (req, res) => {
 
 // Email prospects: new → ready → sent → replied / won. Call-list prospects (no email):
 // new → call → interested (said yes; link texted) / no_answer / not_interested / won.
-const PROSPECT_STATUSES = ["new", "ready", "sending", "sent", "replied", "won", "unsubscribed", "bounced", "skipped", "call", "no_answer", "interested", "not_interested"];
+const PROSPECT_STATUSES = ["new", "ready", "sending", "sent", "replied", "won", "unsubscribed", "bounced", "skipped", "call", "no_answer", "messaged", "interested", "not_interested"];
 
 function slugify(v) {
   return String(v || "").toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
@@ -1398,7 +1398,7 @@ app.get("/api/admin/prospects", requireAdmin, async (req, res) => {
   const only = req.query.view === "outreach" ? "(channel='email' OR status IN ('skipped', 'won'))" : "TRUE";
   const where = `${status ? "WHERE status=$1" : "WHERE status NOT IN ('skipped', 'bounced', 'unsubscribed')"} AND ${only}`;
   const { rows } = await pool.query(
-    `SELECT id, created_at, slug, email, domain, status, prev_status, followup_at, channel, data, sent_at, sent_from, views, last_view_at, notes, shot IS NOT NULL AS has_shot
+    `SELECT id, created_at, slug, email, domain, status, prev_status, followup_at, fb_messaged_at, fb_followup_at, channel, data, sent_at, sent_from, views, last_view_at, notes, shot IS NOT NULL AS has_shot
      FROM prospects ${where} ORDER BY COALESCE(sent_at, created_at) DESC LIMIT ${limit} OFFSET ${offset}`,
     status ? [status] : []
   );
@@ -1451,7 +1451,9 @@ app.post("/api/admin/prospects/:id/status", requireAdmin, async (req, res) => {
   if (!PROSPECT_STATUSES.includes(status) || status === "sending") return res.status(400).json({ error: "Bad status" });
   // Unsubscribed is final (they asked us to stop), so it can't be changed here.
   await pool.query(
-    "UPDATE prospects SET prev_status=status, status=$2, notes=COALESCE($3, notes) WHERE id=$1 AND status <> 'unsubscribed' AND status <> $2",
+    `UPDATE prospects SET prev_status=status, status=$2, notes=COALESCE($3, notes),
+       fb_messaged_at = CASE WHEN $2 = 'messaged' THEN now() ELSE fb_messaged_at END
+     WHERE id=$1 AND status <> 'unsubscribed' AND status <> $2`,
     [req.params.id, status, req.body.notes ?? null]
   );
   res.json({ ok: true });
@@ -1596,6 +1598,12 @@ app.post("/api/admin/prospects/delete", requireAdmin, async (req, res) => {
   } finally {
     client.release();
   }
+});
+
+// Ty sent the Facebook follow-up message (call list "Messaged" tab).
+app.post("/api/admin/prospects/:id/fb-followup", requireAdmin, async (req, res) => {
+  await pool.query("UPDATE prospects SET fb_followup_at=now() WHERE id=$1", [req.params.id]);
+  res.json({ ok: true });
 });
 
 // Puts a prospect back to the status it had before the last change (clicking its status badge).
