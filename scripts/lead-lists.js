@@ -1,15 +1,19 @@
 // Shared by the lead finders (Google: find-leads.js, Facebook: find-facebook-leads.js).
 
-// Trades we pitch (no law, medical, cannabis, firearms, nonprofits, government, schools).
+// Trades we pitch, the ones where a new customer is worth the most weighted up in lib/leadScore.js
+// (no law, medical, cannabis, firearms, nonprofits, government, schools).
 const TRADES = [
   "plumber", "HVAC contractor", "roofing contractor", "electrician", "landscaping company", "pest control",
   "house cleaning service", "towing service", "auto repair shop", "auto body shop", "bakery", "cafe",
-  "family restaurant", "hair salon", "barber shop", "fitness gym", "general contractor", "painting contractor",
+  "family restaurant", "fitness gym", "general contractor", "painting contractor",
   "flooring store", "garage door repair", "tree service", "fence contractor", "concrete contractor",
   "appliance repair", "locksmith", "carpet cleaning", "pool service", "septic service", "welding shop",
-  "machine shop", "small engine repair", "upholstery shop", "florist", "pet grooming", "dog boarding kennel",
+  "small engine repair", "upholstery shop", "florist", "pet grooming", "dog boarding kennel",
   "tire shop", "transmission repair", "glass repair", "sign shop", "printing shop", "jewelry store",
   "furniture store", "hardware store", "boat repair", "RV repair", "lawn mower repair", "moving company",
+  // Added 2026-11-24 (hair salons, barbers and machine shops dropped: low value, see lib/leadScore.js).
+  "excavation contractor", "paving contractor", "gutter contractor", "pressure washing service", "handyman",
+  "well drilling", "irrigation contractor", "siding contractor", "cabinet maker",
 ];
 
 // Small and mid-size US cities, all regions. Searches rotate through trade × city pairs.

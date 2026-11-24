@@ -62,8 +62,18 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   if (!PASSWORD) throw new Error("No admin password: put it in ~/.config/edz/admin_password or EDZ_ADMIN_PASSWORD.");
 
   // 1. Add new leads. Duplicates (same email or website as anyone before) are skipped by the server.
+  // The call list holds at most CALL_LIST_CAP to call (Ty can make about 20 calls a day), so
+  // no-email businesses beyond that are left out, best lead score first.
+  const room = leadFiles.length ? await api("GET", "/api/admin/prospects?status=ready&limit=1") : null;
+  let callSlots = room ? Math.max(0, room.callListCap - room.callList) : 0;
   for (const file of leadFiles) {
-    const leads = JSON.parse(fs.readFileSync(file, "utf8"));
+    const all = JSON.parse(fs.readFileSync(file, "utf8"));
+    const noEmail = (l) => !String(l.email || "").includes("@");
+    const calls = all.filter(noEmail).sort((a, b) => (b.leadScore ?? 50) - (a.leadScore ?? 50));
+    const leads = [...all.filter((l) => !noEmail(l)), ...calls.slice(0, callSlots)];
+    if (calls.length > callSlots) console.log(`${file}: call list is full (${room.callList} to call, cap ${room.callListCap}): left out ${calls.length - callSlots} no-email businesses`);
+    callSlots = Math.max(0, callSlots - calls.length);
+    if (!leads.length) continue;
     const { added, skipped } = await api("POST", "/api/admin/prospects", { prospects: leads });
     console.log(`${file}: added ${added.length}, skipped ${skipped.length}`);
     for (const s of skipped) console.log(`  skipped ${s.business}: ${s.reason}`);
@@ -95,7 +105,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   const status = await api("GET", "/api/admin/prospects?status=ready");
   console.log(`queue: ${status.queue} waiting to be emailed`);
-  console.log(`call list: ${status.callList} businesses to call (no email)`);
+  console.log(`call list: ${status.callList} to call (cap ${status.callListCap}), ${status.callListLow} low priority`);
   console.log(`mailboxes: ${status.mailboxes.map((m) => `${m.user} ${m.sent24}/${m.limit}`).join(", ")}`);
   if (!sendNow) return console.log("not sending: the site emails the queue on its own on weekdays.");
 

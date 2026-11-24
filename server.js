@@ -17,6 +17,7 @@ const outreach = require("./lib/outreach");
 const inbox = require("./lib/inbox");
 const tradeImages = require("./lib/tradeImages");
 const googlePlaces = require("./lib/googlePlaces");
+const { leadScore, MIN_SCORE } = require("./lib/leadScore");
 const businessTypes = require("./config/businessTypes");
 const startExtras = require("./lib/startExtras");
 
@@ -1356,7 +1357,12 @@ function prospectFromLead(lead) {
     // Google place ID (the only Google data we may keep): the sample page loads their Google photos,
     // rating and reviews live with it. Unset = not looked up yet; "" = no Google listing found.
     ...(l.placeId !== undefined ? { placeId: /^[\w-]{10,300}$/.test(l.placeId || "") ? l.placeId : "" } : {}),
+    // Our own 0–100 lead score (lib/leadScore.js); the lead finder sets it from their Google
+    // reviews, otherwise it's worked out from the trade alone below.
+    ...(l.leadScore != null && l.leadScore !== "" && Number.isFinite(Number(l.leadScore)) ? { leadScore: Math.max(0, Math.min(100, Math.round(Number(l.leadScore)))) } : {}),
+    lowPriority: l.lowPriority === true || undefined,
   };
+  if (data.leadScore === undefined) data.leadScore = leadScore(data).score;
   if (!data.business) return { error: "no business name" };
   const hasEmail = /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(email);
   if (email && !hasEmail) return { error: "email doesn't look valid" };
@@ -1381,6 +1387,8 @@ app.post("/api/admin/prospects", requireAdmin, async (req, res) => {
   const skipped = [];
   for (const lead of leads.slice(0, 200)) {
     const p = prospectFromLead(lead);
+    // Low scorers wait under "Low priority" instead of "To call" (added by hand = Ty wants it).
+    if (!p.error && p.channel === "call" && p.data.leadScore < MIN_SCORE && !/by hand/i.test(p.data.source || "")) p.data.lowPriority = true;
     // Added by hand with a Facebook page: Grok Bot reads it on its next run.
     if (!p.error && p.data.facebookUrl && /by hand/i.test(p.data.source || "")) p.data.fbRead = "pending";
     if (p.error) {
@@ -1444,7 +1452,10 @@ app.get("/api/admin/prospects", requireAdmin, async (req, res) => {
     notReady: outreach.notReady(),
     mailboxes: await outreach.mailboxStats(pool),
     queue: (await pool.query("SELECT count(*)::int AS n FROM prospects WHERE status IN ('new','ready') AND channel='email'")).rows[0].n,
-    callList: (await pool.query("SELECT count(*)::int AS n FROM prospects WHERE status='call'")).rows[0].n,
+    // "To call" only; low-priority businesses wait on their own tab (lib/leadScore.js).
+    callList: (await pool.query("SELECT count(*)::int AS n FROM prospects WHERE status='call' AND COALESCE((data->>'lowPriority')::boolean, false) = false")).rows[0].n,
+    callListLow: (await pool.query("SELECT count(*)::int AS n FROM prospects WHERE status='call' AND (data->>'lowPriority')::boolean")).rows[0].n,
+    callListCap: CALL_LIST_CAP,
     sendingNow: outreach.inWindow(),
     inboxCheckedAt: (await pool.query("SELECT max(checked_at) AS t FROM inbox_state")).rows[0].t,
   });
@@ -1482,14 +1493,63 @@ app.post("/api/admin/prospects/:id/status", requireAdmin, async (req, res) => {
   // Unsubscribed is final (they asked us to stop), so it can't be changed here.
   // "Messaged" records how: a Facebook message or a text.
   const via = status === "messaged" ? (req.body.via === "text" ? "text" : "facebook") : null;
-  await pool.query(
+  const { rows } = await pool.query(
     `UPDATE prospects SET prev_status=status, status=$2, notes=COALESCE($3, notes),
        fb_messaged_at = CASE WHEN $2 = 'messaged' THEN now() ELSE fb_messaged_at END,
        messaged_via = COALESCE($4, messaged_via)
-     WHERE id=$1 AND status <> 'unsubscribed' AND status <> $2`,
+     WHERE id=$1 AND status <> 'unsubscribed' AND status <> $2 RETURNING prev_status`,
     [req.params.id, status, req.body.notes ?? null, via]
   );
-  res.json({ ok: true });
+  // A call's outcome counts as a call (if tapping the number didn't already count it), for the
+  // daily call counter. Messages and texts don't.
+  if (rows[0] && ["call", "no_answer"].includes(rows[0].prev_status) && ["no_answer", "not_interested", "interested", "won"].includes(status)) await logCall(req.params.id);
+  res.json({ ok: true, calls: await callsToday() });
+});
+
+// ---- daily call counter ----
+// Lots of short calls from one number in a day gets it labeled "Spam Likely" by the carriers,
+// so the call list counts calls (tapping a number, or marking a call's outcome) and warns at
+// CALL_DAILY_LIMIT. Days are in OUTREACH_TZ (US Central by default).
+const CALL_DAILY_LIMIT = Number(process.env.CALL_DAILY_LIMIT) || 20;
+// Grok Bot stops adding call-list businesses once "To call" has this many.
+const CALL_LIST_CAP = Number(process.env.CALL_LIST_CAP) || 60;
+const CALL_TZ = process.env.OUTREACH_TZ || "America/Chicago";
+// One call per business per 30 minutes: tapping the number and then "No answer" is one call.
+async function logCall(prospectId) {
+  await pool.query(
+    `INSERT INTO call_log (prospect_id) SELECT $1
+     WHERE NOT EXISTS (SELECT 1 FROM call_log WHERE prospect_id=$1 AND at > now() - interval '30 minutes')`,
+    [prospectId]
+  );
+}
+async function callsToday() {
+  const { rows } = await pool.query(
+    `SELECT count(*)::int AS today,
+       count(*) FILTER (WHERE at > now() - interval '1 hour')::int AS last_hour,
+       max(at) AS last_at
+     FROM call_log WHERE (at AT TIME ZONE $1)::date = (now() AT TIME ZONE $1)::date`,
+    [CALL_TZ]
+  );
+  return { today: rows[0].today, lastHour: rows[0].last_hour, lastAt: rows[0].last_at, limit: CALL_DAILY_LIMIT };
+}
+app.get("/api/admin/calls", requireAdmin, async (req, res) => res.json(await callsToday()));
+// Tapped a phone number on the call list.
+app.post("/api/admin/calls", requireAdmin, async (req, res) => {
+  const id = String(req.body?.id || "");
+  if (!(await pool.query("SELECT 1 FROM prospects WHERE id::text=$1", [id])).rows[0]) return res.status(404).json({ error: "No such business." });
+  await logCall(id);
+  res.json(await callsToday());
+});
+
+// Lead score and low priority (scripts/score-call-list.js), or moving a business between
+// "To call" and "Low priority" from the call list.
+app.post("/api/admin/prospects/:id/priority", requireAdmin, async (req, res) => {
+  const set = {};
+  if (typeof req.body.lowPriority === "boolean") set.lowPriority = req.body.lowPriority;
+  if (Number.isFinite(Number(req.body.leadScore)) && req.body.leadScore !== null) set.leadScore = Math.max(0, Math.min(100, Math.round(Number(req.body.leadScore))));
+  if (!Object.keys(set).length) return res.status(400).json({ error: "Nothing to change." });
+  const { rowCount } = await pool.query("UPDATE prospects SET data = data || $2::jsonb WHERE id=$1 AND channel='call'", [req.params.id, JSON.stringify(set)]);
+  res.json({ ok: rowCount > 0 });
 });
 
 // Found their email later (call-list business): it moves to the email queue. It's emailed once

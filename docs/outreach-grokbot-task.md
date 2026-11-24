@@ -10,7 +10,13 @@ You find small businesses for EDZ Solutions, which builds websites and laser-eng
 
 ## 0. Check the queue
 
-Run `cd ~/EDZ-Solutions && node scripts/outreach-daily.js` and read the `queue:` line. That's how many businesses are waiting to be emailed. The goal is to keep **at least 30** waiting. If the queue is 30 or more, stop and report the number. Otherwise go on to step 1.
+Run `cd ~/EDZ-Solutions && node scripts/outreach-daily.js` and read the `queue:` and `call list:` lines. The queue is how many businesses are waiting to be emailed; the goal is to keep **at least 30** waiting. The call list is how many Ty still has to call; it's **capped at 60** (`cap 60`), because Ty makes at most 20 calls a day.
+
+- Queue 30 or more **and** call list at its cap: stop and report both numbers.
+- Call list at its cap: still go on for email candidates, but **don't spend time on no-website businesses** (step 2b). The scripts leave them out anyway, so researching them is wasted.
+- Otherwise go on to step 1.
+
+**Quality over quantity.** Ty would rather have 10 strong businesses than 50 weak ones. Every candidate has a `leadScore` (0–100, from their trade, Google review count and rating, hours and Facebook page; the finder already dropped the weak ones). Keep the `leadScore` field exactly as it is in what you save, and work through candidates highest score first. Strong signs: an established business (lots of Google reviews, a Facebook page that posts), a trade where one new customer is worth a lot (towing, auto body, roofing, HVAC, tree service, concrete, fencing, septic, pest control, garage doors, contractors). Drop: hair salons, barbers, nail and beauty salons, machine shops, and anything that looks like a side gig or barely active.
 
 ## 1. Get candidates from the lead finder
 
@@ -80,7 +86,7 @@ The lead finder also keeps businesses that have no website, or only a Facebook, 
 3. **No email? Keep them anyway.** Leave `email` empty. They go on the call list in /admin, where Ty calls them.
 
 **Weak websites with no email:** a business whose only website is blank, a placeholder, a free builder page with almost nothing on it, or clearly outdated, and that shows **no email but has a working phone number**, also goes on the call list. Fill in `website` with that site, set `noWebsite` to false, leave `email` empty, and keep the phone. (The call script then says "I put together a new homepage for you" instead of "you don't have a website".) Only drop a business with a website if the site is modern and working.
-4. **Drop** chains, government, anything in the skip list, and businesses that look closed (Facebook page silent for 2+ years, "permanently closed" on Google).
+4. **Drop** chains, government, anything in the skip list, and businesses that look closed (Facebook page silent for 2+ years, "permanently closed" on Google). Also drop salons, barbers and machine shops, and businesses with fewer than about 5 Google reviews and a Facebook page with little activity: Ty only has time for about 20 calls a day.
 
 **Never send a message, friend request or comment on Facebook, and never log in to anything.** Only read public pages. Facebook messages are sent by hand by Ty from the call list.
 
@@ -127,4 +133,4 @@ The script adds the businesses (and skips anyone already contacted), takes a scr
 
 ## 4. Report
 
-Reply with a short summary: how many you kept for email (outdated site / no website with an email you found) and for the call list, how many you dropped and why, and the final `queue:` and `mailboxes:` lines. Include any lines that start with "skipped" or "screenshot FAILED".
+Reply with a short summary: the `call list:` line, how many you kept for email (outdated site / no website with an email you found) and for the call list, how many you dropped and why, and the final `queue:` and `mailboxes:` lines. Include any lines that start with "skipped" or "screenshot FAILED".

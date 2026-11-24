@@ -62,6 +62,20 @@
     .promos tr.off td { opacity: .5; }
 
     .call-card { display: grid; grid-template-columns: 1fr; gap: 12px; margin-bottom: 12px; }
+    .call-meter { position: sticky; top: 0; z-index: 5; background: var(--bg, #fff); border: 1px solid var(--line, #ddd); border-radius: 10px; padding: 10px 14px; margin: 0 0 14px; }
+    .call-meter .row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+    .call-meter .big { font-size: 1.15rem; font-weight: 800; }
+    .call-meter .bar { height: 8px; border-radius: 4px; background: #e5e7eb; margin-top: 8px; overflow: hidden; }
+    .call-meter .bar span { display: block; height: 100%; background: #16a34a; transition: width .3s; }
+    .call-meter.warn .bar span { background: #d97706; }
+    .call-meter.over { border-color: #dc2626; }
+    .call-meter.over .bar span { background: #dc2626; }
+    .call-meter.over .big { color: #dc2626; }
+    .call-card .phone.over { color: #9ca3af; text-decoration: line-through; }
+    .call-card .armed-note { color: #dc2626; font-weight: 700; font-size: .9rem; }
+    .score { display: inline-block; font-size: .75rem; font-weight: 700; padding: 1px 7px; border-radius: 9px; background: #eef2ff; color: #3730a3; vertical-align: 2px; }
+    .score.top { background: #dcfce7; color: #166534; }
+    .score.low { background: #f3f4f6; color: #6b7280; }
     .call-card .phone { font-size: 1.25rem; font-weight: 800; color: var(--ink); text-decoration: none; }
     .call-card .script { background: var(--bg-soft); border-radius: 10px; padding: 10px 12px; font-size: .9rem; margin-top: 10px; }
     .call-card .acts { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -145,6 +159,7 @@
     <section class="pane" data-pane="calls">
       <h2>Call list</h2>
       <p class="meta" style="margin-top:-6px">Businesses with no website and no email. Call, and if they want to see it, text them the link from your phone (only after they say yes). <span id="call-count"></span></p>
+      <div class="call-meter" id="call-meter" hidden></div>
       <details class="card add-biz" id="add-biz">
         <summary><strong>+ Add a business</strong> <span class="meta">you found on Facebook, Yelp or anywhere. We build their sample site right away.</span></summary>
         <form id="add-biz-form" data-bizform>
@@ -534,6 +549,25 @@
       return n <= 0 ? "today" : n === 1 ? "yesterday" : `${n} days ago`;
     };
     let cfilter = "call";
+    // Daily call counter (server: CALL_DAILY_LIMIT, default 20). Past it, carriers may start
+    // showing the number as "Spam Likely", so phone links need a second tap.
+    let CALLS = { today: 0, limit: 20, lastHour: 0 };
+    function renderMeter() {
+      const m = document.getElementById("call-meter");
+      const { today, limit, lastHour, lastAt } = CALLS;
+      const left = limit - today;
+      m.hidden = false;
+      m.className = `call-meter${today >= limit ? " over" : today >= limit - 5 ? " warn" : ""}`;
+      const mins = lastAt ? Math.round((Date.now() - new Date(lastAt)) / 6e4) : null;
+      m.innerHTML = `<div class="row"><span class="big">Calls today: ${today} of ${limit}</span>
+        <span class="meta">${today >= limit ? "Done for today. More calls from your number today risks a \"Spam Likely\" label." : `${left} left today`}${lastHour >= 8 ? " · Slow down: 8+ calls in the last hour." : ""}${mins != null ? ` · Last call ${mins < 1 ? "just now" : `${mins} min ago`}` : ""}</span></div>
+        <div class="bar"><span style="width:${Math.min(100, (today / limit) * 100)}%"></span></div>`;
+    }
+    async function loadCallMeter() {
+      try { CALLS = await (await fetch("/api/admin/calls")).json(); } catch {}
+      renderMeter();
+    }
+    const scoreBadge = (d) => d.leadScore == null ? "" : `<span class="score ${d.leadScore >= 70 ? "top" : d.lowPriority ? "low" : ""}" title="Lead score: trade, Google reviews, hours, Facebook">${d.leadScore >= 70 ? "Top pick " : ""}${d.leadScore}</span>`;
     const digits = (p) => String(p || "").replace(/\D/g, "").slice(-10);
     const smsHref = (phone, body) => `sms:+1${digits(phone)}?&body=${encodeURIComponent(body)}`;
     // The sample-site link goes first and on its own line: Messenger and iMessage turn the
@@ -579,8 +613,13 @@
     async function loadCalls() {
       const all = await Promise.all(Object.keys(CSTATUS).map(async (k) => [k, (await (await fetch(`/api/admin/prospects?status=${k}`)).json()).prospects.filter((p) => p.channel === "call")]));
       const by = Object.fromEntries(all);
+      // "To call" is the best first (lead score); low scorers wait under "Low priority".
+      const score = (p) => (p.data?.leadScore ?? 50);
+      by.low = by.call.filter((p) => p.data?.lowPriority).sort((a, b) => score(b) - score(a));
+      by.call = by.call.filter((p) => !p.data?.lowPriority).sort((a, b) => score(b) - score(a));
+      loadCallMeter();
       document.getElementById("call-count").textContent = `${by.call.length} to call.`;
-      document.getElementById("call-filters").innerHTML = Object.entries(CSTATUS)
+      document.getElementById("call-filters").innerHTML = Object.entries({ ...CSTATUS, low: "Low priority" })
         .map(([k, label]) => `<button data-cf="${k}" class="${k === cfilter ? "active" : ""}">${label}<span class="count">${by[k].length}</span></button>`).join("");
       const list = by[cfilter];
       setCount("n-calls", by.call.length);
@@ -591,8 +630,8 @@
             return `<div class="card call-card">
               <button class="remove-x" data-cid="${p.id}" data-cst="skipped" data-note="Removed from the call list" title="Take this business off the call list (undo from Outreach → Skipped)">&#10005; Remove</button>
               <div>
-                <strong>${esc(d.business)}</strong> <span class="meta">· ${esc([d.industry, [d.city, d.state].filter(Boolean).join(", ")].filter(Boolean).join(" · "))}</span><br>
-                ${d.phone ? `<a class="phone" href="tel:+1${digits(d.phone)}">${esc(d.phone)}</a>` : `<div class="meta"><strong>No phone or email.</strong> Message them on Facebook.</div>`}
+                <strong>${esc(d.business)}</strong> ${scoreBadge(d)} <span class="meta">· ${esc([d.industry, [d.city, d.state].filter(Boolean).join(", ")].filter(Boolean).join(" · "))}</span><br>
+                ${d.phone ? `<a class="phone${CALLS.today >= CALLS.limit ? " over" : ""}" href="tel:+1${digits(d.phone)}" data-dial="${p.id}">${esc(d.phone)}</a>` : `<div class="meta"><strong>No phone or email.</strong> Message them on Facebook.</div>`}
                 ${d.hours ? `<div class="meta">${esc(d.hours.split("\n").slice(0, 2).join(" · "))}</div>` : ""}
                 ${p.notes ? `<div class="meta">${esc(p.notes)}</div>` : ""}
                 ${d.fbRead === "pending" ? `<div class="fb-read">Facebook page added: Grok Bot will read it on its next run and fill in what it shows.</div>` : d.fbRead === "blocked" ? `<div class="fb-read warn">Grok Bot couldn't read their Facebook page (login screen). Open it yourself and use Edit info to add what you see.</div>` : d.fbRead === "done" ? `<div class="fb-read ok">&#10003; Filled in from their Facebook page.</div>` : ""}
@@ -609,6 +648,7 @@
                 <button data-copy="${p.id}" data-kind="fbsample" title="After they reply: just the link to their sample site">Copy sample link</button>
                 <button data-copy="${p.id}" data-kind="fbsignup" title="Once they're interested: where they add their info and check out">Copy sign-up link</button>
                 ${d.phone ? `<button data-copy="${p.id}" data-kind="text">Copy text message</button>` : ""}
+                ${p.status === "call" ? (d.lowPriority ? `<button data-prio="${p.id}" data-low="0" title="Put it back on To call">Move to To call</button>` : `<button data-prio="${p.id}" data-low="1" title="Not worth a call right now">Low priority</button>`) : ""}
                 ${["call", "no_answer"].includes(p.status) ? `<button data-addemail="${p.id}">Found their email</button>` : ""}
                 ${["call", "no_answer"].includes(p.status) ? `<button class="go" data-cid="${p.id}" data-cst="messaged" title="After you paste the Facebook message and send it">Sent Facebook message</button>${d.phone ? `<button class="go" data-cid="${p.id}" data-cst="messaged" data-via="text" title="After you paste the text message and send it">Sent text message</button>` : ""}${d.phone ? `<a class="go" href="${smsHref(d.phone, linkText(p))}" data-cid="${p.id}" data-cst="interested">Said yes: text link</a>` : ""}
                   <button data-cid="${p.id}" data-cst="no_answer">No answer</button>
@@ -898,6 +938,25 @@
         return;
       }
       if (e.target.closest("[data-cancelinfo]")) { e.target.closest("form").remove(); return; }
+      const dial = e.target.closest("a[data-dial]");
+      if (dial) {
+        // Over today's limit: the first tap only warns; a second tap calls anyway.
+        if (CALLS.today >= CALLS.limit && !dial.dataset.armed) {
+          e.preventDefault();
+          dial.dataset.armed = "1";
+          dial.insertAdjacentHTML("afterend", `<div class="armed-note">That's ${CALLS.today} calls today. Tap the number again to call anyway.</div>`);
+          return;
+        }
+        fetch("/api/admin/calls", { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: dial.dataset.dial }) })
+          .then((r) => r.json()).then((c) => { if (c.today != null) (CALLS = c), renderMeter(); }).catch(() => {});
+        return;
+      }
+      const prio = e.target.closest("button[data-prio]");
+      if (prio) {
+        prio.disabled = true;
+        await fetch(`/api/admin/prospects/${prio.dataset.prio}/priority`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ lowPriority: prio.dataset.low === "1" }) });
+        return loadCalls();
+      }
       const fu = e.target.closest("button[data-fbfu]");
       if (fu) {
         fu.disabled = true;

@@ -9,6 +9,8 @@
 // noWebsite: Grok Bot looks for an email on their Facebook page or listing, and if there is
 // none they go on the /admin call list. Survivors are saved, pre-filled, to
 // leads/candidates-YYYY-MM-DD-HHMM.json.
+// No-website businesses must also score well (lib/leadScore.js: trade, Google rating and review
+// count, hours), and none are kept while the call list already has CALL_LIST_CAP to call.
 // Every domain looked at is added to leads/checked-domains.txt; every search to leads/searched.txt.
 //
 // Needs a Google Places API (New) key in ~/.config/edz/google_places_key (or GOOGLE_PLACES_KEY).
@@ -39,6 +41,7 @@ const MONTHLY_LIMIT = Number(process.env.PLACES_MONTHLY_LIMIT) || 900;
 const DAILY_LIMIT = Number(process.env.PLACES_DAILY_LIMIT) || 30;
 
 const { TRADES, CITIES, CHAIN } = require("./lead-lists");
+const { leadScore } = require("../lib/leadScore");
 
 // Builders whose sites already look modern, so our pitch won't land.
 const MODERN = /wix\.com|wixstatic|squarespace|shopify|webflow|duda|godaddy\.com\/websites|img1\.wsimg|thryv|hibu|yext|scorpion|townsquare|weebly\.com\/uploads\/.*2[2-9]/i;
@@ -132,13 +135,24 @@ async function search(query) {
     headers: {
       "Content-Type": "application/json",
       "X-Goog-Api-Key": KEY,
-      "X-Goog-FieldMask": "places.id,places.displayName,places.websiteUri,places.nationalPhoneNumber,places.formattedAddress,places.addressComponents,places.businessStatus,places.regularOpeningHours,places.primaryTypeDisplayName,places.googleMapsUri",
+      "X-Goog-FieldMask": "places.id,places.displayName,places.websiteUri,places.nationalPhoneNumber,places.formattedAddress,places.addressComponents,places.businessStatus,places.regularOpeningHours,places.primaryTypeDisplayName,places.googleMapsUri,places.rating,places.userRatingCount",
     },
     body: JSON.stringify({ textQuery: query, pageSize: 20, regionCode: "US" }),
   });
   const out = await res.json();
   if (!res.ok) throw new Error(`Places search failed: ${out.error?.message || res.status}`);
   return out.places || [];
+}
+
+// How many are waiting on the call list's "To call" tab, and the most it should hold.
+async function callListRoom() {
+  try {
+    const res = await fetch(`${SITE}/api/admin/prospects?status=ready&limit=1`, { headers: { Authorization: `Basic ${Buffer.from(`admin:${PASSWORD}`).toString("base64")}` } });
+    const out = await res.json();
+    return { n: out.callList, cap: out.callListCap || 60 };
+  } catch {
+    return { n: 0, cap: 60 };
+  }
 }
 
 async function knownDomains() {
@@ -173,6 +187,9 @@ async function pool(items, n, fn) {
   const searchedFile = path.join(LEADS, "searched.txt");
   const searched = new Set(read(searchedFile).split("\n").filter(Boolean));
   const known = await knownDomains();
+  const room = await callListRoom();
+  let callSlots = Math.max(0, room.cap - room.n);
+  console.log(`call list: ${room.n} to call (cap ${room.cap})${callSlots ? "" : ", full: no-website businesses are left for a later run"}`);
 
   // Every trade × city pair in a fixed shuffled order (so runs spread across the country), minus ones already searched.
   const hash = (s) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
@@ -204,7 +221,7 @@ async function pool(items, n, fn) {
     savedDomains = newDomains.length;
     savedPhones = newPhones.length;
     // Outdated websites (with an email) first, then no-website businesses.
-    const sorted = [...candidates].sort((a, b) => (a.noWebsite ? 1 : 0) - (b.noWebsite ? 1 : 0) || (b.outdatedScore || 0) - (a.outdatedScore || 0));
+    const sorted = [...candidates].sort((a, b) => (a.noWebsite ? 1 : 0) - (b.noWebsite ? 1 : 0) || (b.outdatedScore || 0) - (a.outdatedScore || 0) || (b.leadScore || 0) - (a.leadScore || 0));
     fs.writeFileSync(file, JSON.stringify(sorted, null, 2));
   }
   // A business's address parts and the fields every candidate shares.
@@ -241,15 +258,25 @@ async function pool(items, n, fn) {
       const socialOnly = d && /facebook|instagram|yelp|google|linktr|square\.site|business\.site|nextdoor|angi|homeadvisor|thumbtack/.test(d);
       if ((!d || socialOnly) && !(p.businessStatus && p.businessStatus !== "OPERATIONAL") && !CHAIN.test(name)) {
         // No real website: a candidate if it has a phone we haven't seen.
-        const why2 = phoneKey.length !== 10 ? "no website or phone" : known.has(`tel:${phoneKey}`) ? "already checked" : null;
+        const why2 = phoneKey.length !== 10 ? "no website or phone" : known.has(`tel:${phoneKey}`) ? "already checked" : !callSlots ? "call list full" : null;
         if (why2) {
           tally[why2] = (tally[why2] || 0) + 1;
-          continue;
+          continue; // "call list full" isn't marked checked, so a later run can still find it
         }
         known.add(`tel:${phoneKey}`);
         newPhones.push(phoneKey);
+        // Rating and review count only decide the score here; Google's rules say not to keep them.
+        const fb = d && /facebook\.com/.test(d) ? p.websiteUri : "";
+        const sc = leadScore({ ...base(p, q), facebookUrl: fb }, { rating: p.rating || 0, reviews: p.userRatingCount || 0 });
+        if (sc.low) {
+          const k = `low score (${(sc.why || "trade/reviews").replace(/only \d+ Google reviews?|no Google reviews/, "few Google reviews")})`;
+          tally[k] = (tally[k] || 0) + 1;
+          continue;
+        }
+        callSlots--;
         candidates.push({
           ...base(p, q),
+          leadScore: sc.score,
           noWebsite: true,
           email: "",
           website: "",
@@ -280,6 +307,7 @@ async function pool(items, n, fn) {
         otherEmails: r.emails.slice(1, 4),
         website: r.finalUrl,
         whyOutdated: r.reasons.join(", "),
+        leadScore: leadScore(base(p, q), { rating: p.rating || 0, reviews: p.userRatingCount || 0 }).score,
         outdatedScore: r.score,
       });
     }
