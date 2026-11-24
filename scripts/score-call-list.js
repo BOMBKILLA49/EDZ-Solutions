@@ -39,7 +39,23 @@ async function api(method, route, body) {
 }
 
 let used = read(usageFile).split("\n").filter((l) => l.startsWith(new Date().toISOString().slice(0, 7))).length;
+// Finding a listing's ID is free (Text Search, IDs only). Many call-list businesses don't have one
+// saved (Grok Bot's saves often leave it out), so look it up by name and address.
+async function findId(d) {
+  const where = d.address || [d.city, d.state].filter(Boolean).join(", ");
+  if (!KEY || !d.business || !where) return "";
+  const res = await fetch("https://places.googleapis.com/v1/places:searchText", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Goog-Api-Key": KEY, "X-Goog-FieldMask": "places.id" },
+    body: JSON.stringify({ textQuery: `${d.business}, ${where}`, pageSize: 1, regionCode: "US" }),
+    signal: AbortSignal.timeout(10000),
+  });
+  return res.ok ? (await res.json()).places?.[0]?.id || "" : "";
+}
+
 async function google(d) {
+  let found = false;
+  if (!d.placeId) (d = { ...d, placeId: await findId(d).catch(() => "") }), (found = true);
   if (!KEY || !d.placeId) return null;
   if (used >= LIMIT) throw new Error(`Reached ${LIMIT} Google lookups this month (DETAILS_MONTHLY_LIMIT).`);
   fs.appendFileSync(usageFile, `${new Date().toISOString()} ${d.placeId}\n`);
@@ -51,7 +67,7 @@ async function google(d) {
   if (!res.ok) return null;
   const p = await res.json();
   // Found by the Google lead finder = the right listing; otherwise check the name matches.
-  if (!/^Google/.test(d.source || "") && !sameBusiness(d.business, p.displayName?.text)) return null;
+  if ((found || !/^Google/.test(d.source || "")) && !sameBusiness(d.business, p.displayName?.text)) return null;
   return { rating: p.rating || 0, reviews: p.userRatingCount || 0 };
 }
 
