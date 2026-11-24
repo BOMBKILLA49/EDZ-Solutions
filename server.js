@@ -1578,10 +1578,14 @@ app.post("/api/admin/prospects/:id/email", requireAdmin, async (req, res) => {
 // Cleaned the same way as a new lead. The sample page reads it live; the screenshot is cleared so
 // the next daily run retakes it for the text/Messenger link preview.
 app.post("/api/admin/prospects/:id/info", requireAdmin, async (req, res) => {
-  const { rows } = await pool.query("SELECT data, domain, channel FROM prospects WHERE id=$1", [req.params.id]);
+  const { rows } = await pool.query("SELECT data, domain, channel, status FROM prospects WHERE id=$1", [req.params.id]);
   if (!rows[0]) return res.status(404).json({ error: "No such business." });
-  if (rows[0].channel !== "call") return res.status(400).json({ error: "Only call-list businesses can be edited here." });
+  // Email businesses can be fixed until their email goes out (Outreach → Edit info).
+  const queued = rows[0].channel === "email" && ["new", "ready"].includes(rows[0].status);
+  if (rows[0].channel !== "call" && !queued) return res.status(400).json({ error: "Only call-list businesses and emails not sent yet can be edited." });
   const old = rows[0].data || {};
+  // A queued email's address is where it's sent, so it can't change here.
+  if (queued) delete req.body.email;
   const fields = ["business", "contactName", "industry", "city", "state", "area", "phone", "email", "address", "hours", "tagline", "about", "services", "facebookUrl", "yelpUrl", "googleMapsUrl", "logoUrl", "heroUrl", "heroSeparate", "photoUrls", "photoLabels", "type", "extras", "menu"];
   const input = Object.fromEntries(fields.filter((k) => k in req.body).map((k) => [k, req.body[k]]));
   const p = prospectFromLead({ ...old, ...input });
@@ -1598,8 +1602,9 @@ app.post("/api/admin/prospects/:id/info", requireAdmin, async (req, res) => {
   // New name or address: find their Google listing again on the next page view.
   if (["business", "address", "city", "state"].some((k) => (old[k] || "") !== (data[k] || ""))) delete data.placeId;
   try {
+    // The old screenshot is gone, so a queued email waits for a new one (status new) before it sends.
     await pool.query(
-      "UPDATE prospects SET data=$2, phone_key=COALESCE($3, phone_key), shot=NULL WHERE id=$1",
+      "UPDATE prospects SET data=$2, phone_key=COALESCE($3, phone_key), shot=NULL, status=CASE WHEN status='ready' THEN 'new' ELSE status END WHERE id=$1",
       [req.params.id, data, rows[0].domain ? null : p.phoneKey]
     );
     await claimImages(req.params.id, data);

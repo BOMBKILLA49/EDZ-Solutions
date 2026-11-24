@@ -456,6 +456,7 @@
         (["skipped", "bounced", "unsubscribed"].includes(ofilter) && out.total
           ? `<button class="delete-all" data-delall="${ofilter}">&#128465; Delete all ${out.total} ${OSTATUS[ofilter].toLowerCase()}</button>`
           : "");
+      window._outreach = Object.fromEntries(out.prospects.map((p) => [p.id, p]));
       document.getElementById("outreach-list").innerHTML = out.prospects.length
         ? out.prospects.map((p) => {
             const d = p.data || {};
@@ -474,6 +475,7 @@
                 ${p.email && ["sent", "replied"].includes(p.status) ? `<a href="/api/admin/prospects/${p.id}/email?followup=1" target="_blank">View follow-up</a>` : ""}
                 ${p.status === "sent" && !p.followup_at ? `<button class="go" data-followup="${p.id}">Send follow-up</button>` : ""}
                 ${["sent", "replied"].includes(p.status) ? `<button data-pid="${p.id}" data-ost="won">Won</button>` : ""}
+                ${["new", "ready"].includes(p.status) && p.channel === "email" ? `<button data-oedit="${p.id}" title="Fix their sample site before the email goes out">Edit info</button>` : ""}
                 ${["new", "ready"].includes(p.status) ? `<button data-pid="${p.id}" data-ost="skipped">Skip</button>` : ""}
                 ${["call", "no_answer", "interested"].includes(p.status) ? `<button class="remove-row" data-pid="${p.id}" data-ost="skipped">&#10005; Remove</button>` : ""}
                 ${["skipped", "bounced", "unsubscribed"].includes(p.status) ? `<button class="remove-row" data-del="${p.id}" title="Delete for good (kept on the do-not-contact list so it's never added again)">&#128465; Delete</button>` : ""}
@@ -508,6 +510,36 @@
       ofilter = b.dataset.of;
       pageState("outreach").page = 0;
       loadOutreach();
+    });
+    // Edit info on an email not sent yet: the same form as the call list, in a row under it.
+    document.getElementById("outreach-list").addEventListener("click", (e) => {
+      const b = e.target.closest("button[data-oedit]");
+      if (b) {
+        const row = b.closest("tr");
+        if (!row.nextElementSibling?.classList.contains("edit-row")) {
+          row.insertAdjacentHTML("afterend", `<tr class="edit-row"><td colspan="5">${editForm(window._outreach[b.dataset.oedit])}</td></tr>`);
+          const form = row.nextElementSibling.querySelector("form");
+          showThumbs(form);
+          mountHours(form);
+        }
+        row.nextElementSibling.querySelector("input")?.focus();
+        return;
+      }
+      if (e.target.closest("[data-cancelinfo]")) e.target.closest("tr.edit-row").remove();
+    });
+    document.getElementById("outreach-list").addEventListener("submit", async (e) => {
+      const form = e.target.closest("form[data-infofor]");
+      if (!form) return;
+      e.preventDefault();
+      const msg = form.querySelector("[data-infomsg]");
+      msg.textContent = "Saving…";
+      const res = await fetch(`/api/admin/prospects/${form.dataset.infofor}/info`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(bizBody(form)) });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) { msg.style.color = "var(--err)"; msg.textContent = out.error || "Couldn't save."; return; }
+      const p = window._outreach[form.dataset.infofor];
+      await loadOutreach();
+      const row = document.querySelector(`[data-oedit="${p.id}"]`)?.closest("tr");
+      row?.insertAdjacentHTML("afterend", `<tr class="edit-row"><td colspan="5" class="meta" style="color:var(--ok, #15803d)">Saved. <a href="/p/${p.slug}?admin=1" target="_blank">See their updated site</a>. It's back to "Needs screenshot", so it won't be emailed until the next screenshot run on the Mac takes a new picture.</td></tr>`);
     });
     document.getElementById("outreach-list").addEventListener("click", async (e) => {
       const del = e.target.closest("button[data-del]");
