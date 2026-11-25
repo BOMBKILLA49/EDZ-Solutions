@@ -1389,6 +1389,7 @@ app.post("/api/admin/prospects", requireAdmin, async (req, res) => {
     const p = prospectFromLead(lead);
     // Low scorers wait under "Low priority" instead of "To call" (added by hand = Ty wants it).
     if (!p.error && p.channel === "call" && p.data.leadScore < MIN_SCORE && !/by hand/i.test(p.data.source || "")) p.data.lowPriority = true;
+    if (!p.error && /by hand/i.test(p.data.source || "")) p.data.handWorked = true;
     // Added by hand with a Facebook page: Grok Bot reads it on its next run.
     if (!p.error && p.data.facebookUrl && /by hand/i.test(p.data.source || "")) p.data.fbRead = "pending";
     if (p.error) {
@@ -1562,7 +1563,7 @@ app.post("/api/admin/prospects/:id/email", requireAdmin, async (req, res) => {
     const { rowCount } = await pool.query(
       `UPDATE prospects SET email=$2, channel='email', prev_status=status,
          status=CASE WHEN shot IS NOT NULL THEN 'ready' ELSE 'new' END,
-         data = data || jsonb_build_object('email', $2::text, 'emailSource', $3::text)
+         data = data || jsonb_build_object('email', $2::text, 'emailSource', $3::text, 'handWorked', true)
        WHERE id=$1 AND channel='call' AND status IN ('call', 'no_answer')`,
       [req.params.id, email, source]
     );
@@ -1597,6 +1598,8 @@ app.post("/api/admin/prospects/:id/info", requireAdmin, async (req, res) => {
   const data = { ...old, ...p.data, noWebsite: old.noWebsite ?? p.data.noWebsite, emailSource: old.emailSource || p.data.emailSource, source: old.source || p.data.source };
   // A Facebook page Ty added: Grok Bot reads it (as a visitor) on its next run and fills in
   // what it shows (scripts/facebook-fill.js). Its own save reports "done" or "blocked".
+  // Edited by Ty (not Grok Bot's Facebook fill): its email goes out before the rest of the queue.
+  if (!req.body.fbRead) data.handWorked = true;
   if (["done", "blocked"].includes(req.body.fbRead)) data.fbRead = req.body.fbRead;
   else if (data.facebookUrl && data.facebookUrl !== old.facebookUrl) data.fbRead = "pending";
   // New name or address: find their Google listing again on the next page view.

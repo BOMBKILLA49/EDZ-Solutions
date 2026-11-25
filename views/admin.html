@@ -461,7 +461,7 @@
         ? out.prospects.map((p) => {
             const d = p.data || {};
             return `<tr>
-              <td><strong>${esc(d.business)}</strong><div class="meta">${esc([d.industry, [d.city, d.state].filter(Boolean).join(", ")].filter(Boolean).join(" · "))}</div>
+              <td><strong>${esc(d.business)}</strong>${d.handWorked && ["new", "ready"].includes(p.status) ? ` <span class="score top" title="You worked on this one, so it's emailed before the rest of the queue">Sends first</span>` : ""}<div class="meta">${esc([d.industry, [d.city, d.state].filter(Boolean).join(", ")].filter(Boolean).join(" · "))}</div>
                 <div class="meta">${esc(p.email || d.phone)} · ${p.domain ? `<a href="${esc(d.website)}" target="_blank" rel="noopener">${esc(p.domain)}</a>` : "no website"}</div>
                 ${p.notes ? `<div class="meta" style="color:${p.status === "replied" ? "var(--ok)" : "var(--err)"}">${esc(p.notes)}</div>` : ""}</td>
               <td>${p.prev_status && p.status !== "unsubscribed"
